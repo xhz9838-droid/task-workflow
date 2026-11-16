@@ -1,7 +1,7 @@
 {
   "task_id": "3413",
-  "stage": "T05-ccconnect-design-confirm",
-  "updated_at": "2026-11-16T14:23+08:00",
+  "stage": "T06-QA1-pending",
+  "updated_at": "2026-11-16T15:30+08:00",
   "zentao": {
     "status": "wait",
     "owner": "xuhongzu",
@@ -21,7 +21,10 @@
     "T02_zentao_read": "done (read-only)",
     "T02_repo_analysis": "done: all 3 agents completed (backend ae49c65109895c10f, web a7c5e442bab3a35ac, mobile aa20ad50c52dc44f6)",
     "T03_agents": "done: .claude/agents/ 7 files (not yet reviewed/committed)",
-    "T04_design": "done: requirements.md, architecture.md, ddl.sql (no changes), openapi.yaml (existing endpoints), tasks.yaml, acceptance-matrix.md, progress.md"
+    "T04_design": "done: requirements.md, architecture.md, ddl.sql (no changes), openapi.yaml (existing endpoints), tasks.yaml, acceptance-matrix.md, progress.md",
+    "T06_W1_web": "done: jeebootx-ui Batch/index.vue (105+/3-), commit 1c302d6, eslint 0 err, vite build 8581 modules OK, report agent-reports/web-frontend-1.json",
+    "T06_QA1": "pending",
+    "T06_IR1": "pending"
   },
   "repos": {
     "sanitation": {
