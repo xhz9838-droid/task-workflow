@@ -63,6 +63,14 @@
 
   "unresolved_issues": [],
 
+  "human_decision": {
+    "triggered": false,
+    "decision_id": "",
+    "user_choice": "",
+    "decision_result": "",
+    "completed": false
+  },
+
   "acceptance_vs_matrix": {},
 
   "verdict": "PASS|PARTIAL|FAIL",

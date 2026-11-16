@@ -1,0 +1,39 @@
+# HITL 人工决策配置（Human Decision Policy）
+# 非敏感配置；敏感项（management token）走 .env CC_MGMT_TOKEN 或
+# ~/.cc-connect/config.toml [management] token（自动读取，不落盘）。
+human_decision:
+  enabled: true
+
+  # 授权决策人白名单（钉钉用户 ID）。为空且 any_private_chat_user=true 时，
+  # 单聊（dingtalk:d:）中会话主人视为授权决策人（best-effort）。
+  # 群聊回复在未配置 message.received hook 时无法验证身份，默认拒绝。
+  deciders: []
+  #  - user_id: "17248148409976157"
+  #    name: "示例用户"
+  any_private_chat_user: true
+
+  # MCP 工具有界等待（秒）。超时后安全挂起，绝不放行未批准操作。
+  tool_wait_seconds: 300
+  poll_interval_seconds: 2
+
+  # 超时策略（秒）。超时**不自动批准**，仅提醒并标记。
+  remind_after_seconds: 1800
+  timeout_after_seconds: 86400
+
+  # 通知（复用 cc-connect send）
+  cc_connect_bin: "cc-connect"
+  notify_retries: 3
+  notify_retry_interval_seconds: 5
+  dry_run_notify: false
+
+  # 回复来源
+  watch_session_files: true      # 轮询 ~/.cc-connect/sessions/*.json（零配置兜底）
+  hook_endpoint_host: "127.0.0.1"
+  hook_endpoint_port: 9411       # 供 cc-connect type=http hook 回调（可选）
+
+  # cc-connect Management API（live 注入恢复用）
+  management_api: "http://127.0.0.1:9820"
+  # management_token: 见 .env CC_MGMT_TOKEN 或自动读取 cc-connect config.toml
+
+  # 恢复策略优先级（实现按此顺序尝试）
+  resume_order: ["live_continue", "cc_connect_resume", "checkpoint_rebuild"]

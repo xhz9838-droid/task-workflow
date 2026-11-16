@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "human-decision": {
+      "command": "python",
+      "args": ["agent-manager/human_decision/mcp_server.py"],
+      "env": {}
+    }
+  }
+}
