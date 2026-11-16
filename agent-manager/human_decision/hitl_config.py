@@ -54,6 +54,8 @@ class HitlConfig:
     timeout_after_seconds: int = 86400
     notify_retries: int = 3
     notify_retry_interval_seconds: int = 5
+    notify_transport: list[str] = field(default_factory=lambda: ["dingtalk_direct", "cc_connect"])
+    dingtalk_user_id: str = ""  # 直发通道目标用户；空 = 从 cc_session_key 单聊键尾段解析
     cc_connect_bin: str = "cc-connect"
     cc_data_dir: str = ""
     management_api: str = "http://127.0.0.1:9820"

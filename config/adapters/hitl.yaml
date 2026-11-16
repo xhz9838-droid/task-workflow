@@ -20,8 +20,11 @@ human_decision:
   remind_after_seconds: 1800
   timeout_after_seconds: 86400
 
-  # 通知（复用 cc-connect send）
+  # 通知（通道按序尝试：dingtalk_direct = 钉钉官方机器人 API 直发（推荐，
+  # 实测 cc-connect v1.5.0 send 虚报成功不送达）；cc_connect = cc-connect send 兜底）
   cc_connect_bin: "cc-connect"
+  notify_transport: ["dingtalk_direct", "cc_connect"]
+  dingtalk_user_id: ""          # 直发目标用户；空 = 从单聊会话键解析
   notify_retries: 3
   notify_retry_interval_seconds: 5
   dry_run_notify: false

@@ -169,14 +169,20 @@ class SessionResumer:
 
     # ------------------------------------------------------- live 注入
     def _try_live_inject(self, rec: DecisionRecord) -> bool:
-        """Session live 时经 Management API POST /send 注入决策结果。"""
+        """Session live 时经 Management API POST /send 注入决策结果。
+
+        仅当**原 Agent 会话仍为该聊天的活跃会话**（agent_session_id 一致）时注入，
+        避免误注入同一聊天中的其他 Agent 会话。
+        """
+        if not rec.session_id:
+            return False
         if not rec.cc_project or not rec.cc_session_key:
             rec2 = self._fill_cc_binding(rec)
             if rec2:
                 rec = rec2
         if not rec.cc_project or not rec.cc_session_key:
             return False
-        if not self._session_live(rec.cc_project, rec.cc_session_key):
+        if not self._session_live(rec.cc_project, rec.cc_session_key, rec.session_id):
             return False
         body = {"session_key": rec.cc_session_key, "message": build_resume_message(rec)}
         try:
@@ -187,7 +193,8 @@ class SessionResumer:
             self.store.log_event(rec.decision_id, "live_inject_failed", {"error": str(e)[:200]})
             return False
 
-    def _session_live(self, project: str, session_key: str) -> bool:
+    def _session_live(self, project: str, session_key: str, expect_sid: str = "") -> bool:
+        """该聊天的活跃 live 会话是否即原 Agent 会话（expect_sid 一致才 True）。"""
         try:
             data = self._mgmt_request("GET", f"/api/v1/projects/{project}/sessions")
         except Exception:
@@ -195,20 +202,19 @@ class SessionResumer:
         sessions = (data or {}).get("sessions") or []
         for s in sessions:
             if s.get("session_key") == session_key and s.get("live"):
+                sid = s.get("agent_session_id") or ""
+                if expect_sid and sid and sid != expect_sid:
+                    continue  # 活跃会话已换人，不注入
                 return True
-        # 无 session_key 字段匹配时保守返回 False
         return False
 
     def _agent_sid_available(self, rec: DecisionRecord) -> bool:
-        if rec.session_id:
-            return True
-        sid = self._query_agent_sid(rec.cc_project or os.environ.get("CC_PROJECT", ""),
-                                   rec.cc_session_key or os.environ.get("CC_SESSION_KEY", ""))
-        if sid:
-            self.store.update_fields(rec.decision_id, session_id=sid)
-            rec.session_id = sid
-            return True
-        return False
+        """恢复优先级二依据：决策创建时捕获的原 agent_session_id 是否在。
+
+        不在运行时用当前活跃会话"补填"——那可能是别的 Agent 会话，
+        误补填会把恢复对象张冠李戴（如实降级到检查点重建）。
+        """
+        return bool(rec.session_id)
 
     def _query_agent_sid(self, project: str, session_key: str) -> str:
         if not project or not session_key:

@@ -29,6 +29,109 @@ class NotifyError(Exception):
     pass
 
 
+class DingTalkDirectSender:
+    """钉钉官方机器人 API 直发（/v1.0/robot/oToMessages/batchSend）。
+
+    与 cc-connect 使用同一个钉钉机器人应用（robotCode=appKey）。
+    实测背景：cc-connect v1.5.0 的 `send` 出站投递虚报成功不送达，
+    而同一凭据直发官方 API 可靠送达，因此直发优先、cc-connect 兜底。
+    凭据只存内存，不打印、不落盘。来源优先级：
+        环境变量 DINGTALK_APP_KEY/SECRET → ~/.dingtalk-skills/config
+        → cc-connect config.toml（client_id/client_secret）
+    """
+
+    TOKEN_URL = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
+    SEND_URL = "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend"
+
+    def __init__(self, cfg: HitlConfig, *, logger=None):
+        self.cfg = cfg
+        self._log = logger or (lambda m: None)
+        self._token = ""
+        self._token_expires = 0.0
+
+    def _creds(self) -> tuple[str, str]:
+        key = os.environ.get("DINGTALK_APP_KEY", "")
+        sec = os.environ.get("DINGTALK_APP_SECRET", "")
+        if key and sec:
+            return key, sec
+        p = os.path.join(os.path.expanduser("~"), ".dingtalk-skills", "config")
+        if os.path.exists(p):
+            kv = {}
+            with open(p, encoding="utf-8") as f:
+                for line in f:
+                    if "=" in line and not line.lstrip().startswith("#"):
+                        k, _, v = line.partition("=")
+                        kv[k.strip()] = v.strip()
+            if kv.get("DINGTALK_APP_KEY") and kv.get("DINGTALK_APP_SECRET"):
+                return kv["DINGTALK_APP_KEY"], kv["DINGTALK_APP_SECRET"]
+        try:
+            import tomllib
+
+            for base in (os.environ.get("CC_CONNECT_DATA_DIR") or "",
+                         os.path.join(os.path.expanduser("~"), ".cc-connect")):
+                path = os.path.join(base or ".", "config.toml")
+                if os.path.exists(path):
+                    with open(path, "rb") as f:
+                        data = tomllib.load(f)
+                    for proj in data.get("projects") or []:
+                        for pf in proj.get("platforms") or []:
+                            if pf.get("type") == "dingtalk":
+                                opt = pf.get("options") or {}
+                                if opt.get("client_id") and opt.get("client_secret"):
+                                    return str(opt["client_id"]), str(opt["client_secret"])
+        except Exception:
+            pass
+        raise NotifyError("未找到钉钉凭据（DINGTALK_APP_KEY/SECRET 或 cc-connect config）")
+
+    def _access_token(self) -> str:
+        import time as _t
+        import json as _j
+        import urllib.request
+
+        if self._token and _t.time() < self._token_expires:
+            return self._token
+        key, sec = self._creds()
+        body = _j.dumps({"appKey": key, "appSecret": sec}).encode("utf-8")
+        req = urllib.request.Request(self.TOKEN_URL, data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = _j.loads(r.read().decode("utf-8"))
+        except Exception as e:
+            raise NotifyError(f"获取钉钉 accessToken 失败: {e}")
+        tok = data.get("accessToken") or ""
+        if not tok:
+            raise NotifyError(f"钉钉 accessToken 为空: {str(data)[:120]}")
+        self._token = tok
+        self._token_expires = _t.time() + 7000
+        return tok
+
+    def send(self, text: str, user_id: str) -> None:
+        import json as _j
+        import urllib.request
+
+        key, _ = self._creds()
+        tok = self._access_token()
+        body = _j.dumps({
+            "robotCode": key,
+            "userIds": [user_id],
+            "msgKey": "sampleText",
+            "msgParam": _j.dumps({"content": text}, ensure_ascii=False),
+        }).encode("utf-8")
+        req = urllib.request.Request(self.SEND_URL, data=body, headers={
+            "Content-Type": "application/json",
+            "x-acs-dingtalk-access-token": tok,
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                resp = _j.loads(r.read().decode("utf-8") or "{}")
+        except Exception as e:
+            raise NotifyError(f"钉钉直发失败: {e}")
+        invalid = resp.get("invalidStaffIdList") or []
+        if invalid:
+            raise NotifyError(f"钉钉直发用户无效: {invalid}")
+
+
 def build_decision_message(rec: DecisionRecord) -> str:
     lines = [
         "【Agent 重大决策请求】",
@@ -96,16 +199,48 @@ def build_resume_message(rec: DecisionRecord) -> str:
 
 
 class DingTalkNotifier:
-    """cc-connect send 封装。dry_run=True 时只生成消息不发送（测试用）。"""
+    """钉钉通知。通道按 cfg.notify_transport 顺序尝试（默认直发优先、cc-connect 兜底）。
+    dry_run=True 时只生成消息不发送（测试用）。"""
 
     def __init__(self, cfg: HitlConfig, *, logger=None):
         self.cfg = cfg
         self._log = logger or (lambda m: None)
+        self._direct = DingTalkDirectSender(cfg, logger=logger)
+
+    def _target_user(self, cc_session_key: str) -> str:
+        if self.cfg.dingtalk_user_id:
+            return self.cfg.dingtalk_user_id
+        key = cc_session_key or os.environ.get("CC_SESSION_KEY", "")
+        parts = (key or "").split(":")
+        if len(parts) >= 2 and parts[1] == "d":
+            return parts[-1]
+        return os.environ.get("DINGTALK_USER_ID", "")
 
     def _send(self, body: str, *, cc_project: str = "", cc_session_key: str = "") -> None:
         if self.cfg.dry_run_notify:
             self._log(f"[dry-run] 通知: {body[:60]}...")
             return
+        errors = []
+        for transport in self.cfg.notify_transport:
+            if transport == "dingtalk_direct":
+                uid = self._target_user(cc_session_key)
+                if not uid:
+                    errors.append("direct: 无法解析目标用户 ID")
+                    continue
+                try:
+                    self._direct.send(body, uid)
+                    return
+                except NotifyError as e:
+                    errors.append(str(e))
+            elif transport == "cc_connect":
+                try:
+                    self._send_ccconnect(body, cc_project, cc_session_key)
+                    return
+                except NotifyError as e:
+                    errors.append(str(e))
+        raise NotifyError("；".join(errors) or "无可用通知通道")
+
+    def _send_ccconnect(self, body: str, cc_project: str = "", cc_session_key: str = "") -> None:
         bin_ = resolve_cc_connect_bin(self.cfg.cc_connect_bin)
         args = [bin_, "send", "--stdin"]
         if cc_project:

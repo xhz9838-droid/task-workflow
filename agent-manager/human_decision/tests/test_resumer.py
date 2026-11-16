@@ -49,7 +49,7 @@ def test_resume_live_inject_when_session_live(resumer, store, monkeypatch):
     rec = _decided(store)
     store.log_event(rec.decision_id, "tool_suspended", {})
     injected = []
-    monkeypatch.setattr(type(resumer), "_session_live", lambda self, p, k: True)
+    monkeypatch.setattr(type(resumer), "_session_live", lambda self, p, k, *a: True)
     monkeypatch.setattr(type(resumer), "_try_live_inject",
                         lambda self, r: injected.append(1) or True)
     out = resumer.resume(rec)
