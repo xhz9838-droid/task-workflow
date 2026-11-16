@@ -1,0 +1,12 @@
+zentao:
+  enabled: true
+  skill_dir_env: "ZENTAO_SKILL_DIR"
+  config_path_env: "ZENTAO_CONFIG"
+  skill_dir: ""
+  config_path: ""
+  manage_script: ""
+  write_guard: true
+  progress_mode: append
+  allow_finish: human_only
+  allow_close: never
+  verify_owner: true

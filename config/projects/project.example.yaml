@@ -1,0 +1,35 @@
+# 项目配置模板（不含真实路径/凭据）
+# 复制为 config/projects/{project_key}.yaml 后填写
+
+project:
+  key: "${PROJECT_KEY}"
+  name: "${PROJECT_NAME}"
+  root: "${PROJECT_ROOT}"
+  baseline_branch: main
+
+  repositories:
+    - key: "${REPO_KEY}"
+      path: "${REPO_PATH}"
+      role: fullstack            # backend | frontend | mobile | database | fullstack
+      technology: "${TECH}"
+      enabled: true
+      build_command: ""
+      test_command: ""
+      lint_command: ""
+
+  tech_stack: {}
+
+  # 按需启用 Agent（不适用的置 false）
+  agents:
+    dw-architect: true
+    dw-database: true
+    dw-java-backend: true
+    dw-web-frontend: true
+    dw-mobile-app: true
+    dw-qa-engineer: true
+    dw-integration-reviewer: true
+
+  integrations:
+    task_source: none            # zentao | other | none
+    ci: none                     # jenkins | other | none
+    notification: none           # dingtalk | other | none

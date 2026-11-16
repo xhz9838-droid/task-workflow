@@ -1,0 +1,124 @@
+# 任务 DAG 模板
+# 用法：复制到 execution/{project_key}/{task_id}/tasks.yaml 后填写
+# 规则：每节点独立交付物、明确文件所有权、公共接口冻结后再开发
+
+project_key: "${PROJECT_KEY}"
+task_id: "${TASK_ID}"
+created_at: "ISO8601"
+baseline_branch: "dev"
+
+# 节点状态：pending | running | done | unverified | failed | blocked
+nodes:
+  - id: A1
+    name: "需求分析"
+    agent: architect
+    depends_on: []
+    files_owned: []
+    deliverables:
+      - "design/requirements.md"
+    acceptance:
+      - "业务功能/流程/角色权限/数据实体/API/页面/约束/异常/验收标准齐全"
+      - "结论标注证据（文件:行号）"
+    status: pending
+
+  - id: A2
+    name: "架构与数据库设计"
+    agent: architect
+    depends_on: [A1]
+    files_owned: []
+    deliverables:
+      - "design/architecture.md"
+      - "design/ddl.sql"
+      - "design/openapi.yaml"
+    acceptance:
+      - "与现有系统兼容"
+      - "优先复用现有能力"
+    status: pending
+
+  - id: A3
+    name: "人工设计确认"
+    agent: main
+    depends_on: [A2]
+    files_owned: []
+    deliverables:
+      - "decisions.md"
+    acceptance:
+      - "收到明确设计确认（L3 项逐项决策）"
+    status: pending
+
+  - id: B1
+    name: "后端开发"
+    agent: java-backend
+    depends_on: [A3]
+    files_owned:
+      - "backend/src/main/**"
+      - "backend/src/test/**"
+    deliverables:
+      - "后端实现 + 单元测试"
+    acceptance:
+      - "编译通过、单元测试通过、权限/异常处理通过"
+    status: pending
+
+  - id: B2
+    name: "前端开发"
+    agent: web-frontend
+    depends_on: [A3]
+    files_owned:
+      - "web/src/**"
+    deliverables:
+      - "前端实现 + 构建通过"
+    acceptance:
+      - "构建通过、lint 通过、与 openapi.yaml 一致"
+    status: pending
+
+  - id: C1
+    name: "QA 验收"
+    agent: qa-engineer
+    depends_on: [B1, B2]
+    files_owned:
+      - "tests/**"
+    deliverables:
+      - "acceptance/acceptance-matrix.md"
+    acceptance:
+      - "每项验收有真实证据；无法验证标 BLOCKED"
+    status: pending
+
+  - id: C2
+    name: "集成审查"
+    agent: integration-reviewer
+    depends_on: [C1]
+    files_owned: []
+    deliverables:
+      - "acceptance/integration-review.md"
+    acceptance:
+      - "跨端契约一致性核对通过"
+    status: pending
+
+  - id: D1
+    name: "CI 构建"
+    agent: main
+    depends_on: [C2]
+    files_owned: []
+    deliverables:
+      - "jenkins/build-summary.json"
+    acceptance:
+      - "最终 result + 测试报告明确"
+    status: pending
+
+  - id: D2
+    name: "最终报告"
+    agent: main
+    depends_on: [D1]
+    files_owned: []
+    deliverables:
+      - "final-report.md"
+    acceptance:
+      - "含任务ID/分支/commit/各Agent交付/CI URL/测试报告/未完成项/决策记录/验收结果"
+    status: pending
+
+concurrency:
+  max_parallel_agents: 2
+
+retry:
+  max_attempts: 2
+  strategy: exponential-backoff

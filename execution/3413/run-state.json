@@ -1,7 +1,7 @@
 {
   "task_id": "3413",
-  "stage": "T06-QA1-pending",
-  "updated_at": "2026-11-16T15:30+08:00",
+  "stage": "T06-QA1-running",
+  "updated_at": "2026-11-16T16:30+08:00",
   "zentao": {
     "status": "wait",
     "owner": "xuhongzu",
@@ -23,7 +23,7 @@
     "T03_agents": "done: .claude/agents/ 7 files (not yet reviewed/committed)",
     "T04_design": "done: requirements.md, architecture.md, ddl.sql (no changes), openapi.yaml (existing endpoints), tasks.yaml, acceptance-matrix.md, progress.md",
     "T06_W1_web": "done: jeebootx-ui Batch/index.vue (105+/3-), commit 1c302d6, eslint 0 err, vite build 8581 modules OK, report agent-reports/web-frontend-1.json",
-    "T06_QA1": "pending",
+    "T06_QA1": "running: code-reviewer agent (abb2e7e984171d5d6) executing AC1-AC12 acceptance",
     "T06_IR1": "pending"
   },
   "repos": {
@@ -48,7 +48,15 @@
       "dirty": "M .env.development"
     }
   },
-  "worktrees": {},
+  "worktrees": {
+    "web": {
+      "path": "D:/WorkSpace/.worktrees/jeebootx-ui-zt3413",
+      "branch": "ai/zt-3413",
+      "base": "origin/dev @ c54c670",
+      "w1_commit": "1c302d6",
+      "dirty": false
+    }
+  },
   "agents": {},
   "jenkins": {
     "builds": []

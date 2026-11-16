@@ -1,0 +1,21 @@
+jenkins:
+  enabled: true
+  base_url_env: "JENKINS_URL"
+  user_env: "JENKINS_USER"
+  token_env: "JENKINS_TOKEN"
+  jobs:
+    - "ct-jeebootx-sanitation"
+    - "jeebootx-ui"
+  param_names:
+    repo_url: "REPO_URL"
+    branch: "GIT_BRANCH"
+    commit: "GIT_COMMIT"
+    task: "ZENTAO_TASK_ID"
+    workflow: "WORKFLOW_ID"
+    scope: "TEST_SCOPE"
+  timeout_seconds: 1800
+  poll_interval_seconds: 5
+  result_policy:
+    accept: ["SUCCESS"]
+    analyze: ["UNSTABLE"]
+    reject: ["FAILURE", "ABORTED", "NOT_BUILT"]

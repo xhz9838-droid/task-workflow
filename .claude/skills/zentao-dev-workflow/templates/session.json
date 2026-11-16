@@ -1,0 +1,30 @@
+{
+  "project_key": "${PROJECT_KEY}",
+  "task_id": "${TASK_ID}",
+  "claude_session_id": "",
+  "started_at": "ISO8601",
+  "updated_at": "ISO8601",
+
+  "worktrees": {},
+
+  "integrations": {
+    "task_source": {
+      "provider": "zentao|other|none",
+      "session_key": ""
+    },
+    "notification": {
+      "provider": "dingtalk|other|none",
+      "cc_connect_project": "",
+      "cc_connect_session": ""
+    },
+    "ci": {
+      "provider": "jenkins|other|none",
+      "build_url_template": ""
+    }
+  },
+
+  "recovery": {
+    "last_checkpoint_at": null,
+    "resumable": true
+  }
+}

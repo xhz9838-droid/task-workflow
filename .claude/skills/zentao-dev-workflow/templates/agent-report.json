@@ -1,0 +1,70 @@
+{
+  "project_key": "${PROJECT_KEY}",
+  "task_id": "${TASK_ID}",
+  "agent": "java-backend",
+  "task_ids": ["B1"],
+  "status": "done|blocked|failed|unverified",
+
+  "worktree": "",
+  "branch": "",
+  "commit": "",
+  "files_changed": [],
+
+  "features_implemented": [],
+
+  "tests": [
+    {
+      "cmd": "npm run build",
+      "result": "pass|fail|not_run|blocked",
+      "evidence": "真实输出摘要或 BLOCKED 原因"
+    }
+  ],
+
+  "not_run": [
+    {
+      "cmd": "npm test",
+      "reason": "项目无 test 脚本，无测试框架"
+    }
+  ],
+
+  "blocked": [
+    {
+      "id": "AC1",
+      "reason": "需真实浏览器 + 项目经理账号",
+      "wait_for": "浏览器环境 + 测试账号",
+      "resume_steps": "登录项目经理账号 → 打开页面 → 验证按钮可见性"
+    }
+  ],
+
+  "cross_checks": {
+    "openapi_consistency": {"status": "pass|fail|not_run", "notes": ""},
+    "requirements_FR": {"status": "pass|fail|not_run", "notes": ""}
+  },
+
+  "blockers": [
+    {
+      "id": "BLK-...",
+      "level": "L1|L2|L3",
+      "summary": "",
+      "impact": "",
+      "recommendation": "",
+      "wait_for": "",
+      "resume_steps": "",
+      "resolution": null
+    }
+  ],
+
+  "git_diff_summary": {
+    "files": 0,
+    "insertions": 0,
+    "deletions": 0,
+    "uncommitted_restored": ""
+  },
+
+  "unresolved_issues": [],
+
+  "acceptance_vs_matrix": {},
+
+  "verdict": "PASS|PARTIAL|FAIL",
+  "notes": ""
+}

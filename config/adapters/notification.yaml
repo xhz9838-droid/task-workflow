@@ -1,0 +1,11 @@
+notification:
+  enabled: true
+  provider: dingtalk
+  cc_connect_bin: "cc-connect"
+  data_dir_env: "CC_CONNECT_DATA_DIR"
+  session_keys_file: "session.json"
+  session_fields:
+    project: "integrations.notification.cc_connect_project"
+    session: "integrations.notification.cc_connect_session"
+  audit_sent: true
+  required_fields: [project_key, task_id, session_id, blocker_id, stage]

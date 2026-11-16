@@ -1,0 +1,23 @@
+# ZenTao 适配器配置（非敏感）
+# 账号密码在 ~/.claude/skills/zentao/_shared/config.json（用户级，gitignored）
+# 用法：复制为 config/adapters/zentao.yaml 后填写
+
+zentao:
+  enabled: true
+
+  # 路径来源：环境变量优先，未设则用下面的默认位置
+  skill_dir_env: "ZENTAO_SKILL_DIR"     # 默认 ~/.claude/skills
+  config_path_env: "ZENTAO_CONFIG"      # 默认 <skill_dir>/zentao/_shared/config.json
+
+  skill_dir: ""                          # 留空则用环境变量/默认
+  config_path: ""
+  manage_script: ""                      # 默认 <skill_dir>/zentao-tasks/scripts/manage_tasks.py
+
+  # 写入策略（硬约束）
+  write_guard: true
+  progress_mode: append                  # 追加，不覆盖原文
+  allow_finish: human_only               # 仅本人确认后
+  allow_close: never                     # 永不自动 close
+
+  # 身份核验
+  verify_owner: true

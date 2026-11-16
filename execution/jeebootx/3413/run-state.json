@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "project_key": "jeebootx",
+  "task_id": "3413",
+  "stage": "T06-QA1-running",
+  "updated_at": "2026-11-16T16:30+08:00",
+  "task_source": {
+    "provider": "zentao|other|none",
+    "task_ref": "",
+    "verified_owner": false,
+    "status": ""
+  },
+  "config": {
+    "project_config": "config/projects/${PROJECT_KEY}.yaml",
+    "user_config": "config/users/${USER_ID}.yaml",
+    "adapters": []
+  },
+  "dag": {
+    "file": "tasks.yaml",
+    "nodes": [
+      {
+        "id": "A1",
+        "agent": "architect",
+        "status": "pending|running|done|unverified|failed|blocked",
+        "depends_on": [],
+        "files_owned": [],
+        "attempts": 0,
+        "last_result": null,
+        "report": null
+      }
+    ]
+  },
+  "worktrees": {
+    "web": {
+      "path": "D:/WorkSpace/.worktrees/jeebootx-ui-zt3413",
+      "branch": "ai/zt-3413",
+      "base": "origin/dev @ c54c670",
+      "w1_commit": "1c302d6",
+      "dirty": false
+    }
+  },
+  "agents": {},
+  "ci": {
+    "provider": "jenkins|other|none",
+    "enabled": false,
+    "jobs": [],
+    "builds": []
+  },
+  "task_writes": {
+    "count": 0,
+    "last": null
+  },
+  "retry_log": [],
+  "blockers": [],
+  "checkpoints": [
+    {
+      "at": "ISO8601",
+      "stage": "",
+      "completed_nodes": [],
+      "next_nodes": [],
+      "evidence": {}
+    }
+  ],
+  "last_acceptance": null,
+  "zentao": {
+    "status": "wait",
+    "owner": "xuhongzu",
+    "verified_owner": true,
+    "execution": 191,
+    "execution_name": "智慧环卫202611",
+    "pri": 3,
+    "estimate": "0.00",
+    "consumed": "0.00",
+    "left": "0.00",
+    "estStarted": null,
+    "deadline": null,
+    "story": 0
+  },
+  "milestones": {
+    "T01_init": "done: git init, .gitignore, CLAUDE.md, 7 agents, Jenkinsfile.ai-test, scripts (zt.py, jenkins_run.py, notify.sh, audit.py), session.json, committed 63b12bc",
+    "T02_zentao_read": "done (read-only)",
+    "T02_repo_analysis": "done: all 3 agents completed (backend ae49c65109895c10f, web a7c5e442bab3a35ac, mobile aa20ad50c52dc44f6)",
+    "T03_agents": "done: .claude/agents/ 7 files (not yet reviewed/committed)",
+    "T04_design": "done: requirements.md, architecture.md, ddl.sql (no changes), openapi.yaml (existing endpoints), tasks.yaml, acceptance-matrix.md, progress.md",
+    "T06_W1_web": "done: jeebootx-ui Batch/index.vue (105+/3-), commit 1c302d6, eslint 0 err, vite build 8581 modules OK, report agent-reports/web-frontend-1.json",
+    "T06_QA1": "running: code-reviewer agent (abb2e7e984171d5d6) executing AC1-AC12 acceptance",
+    "T06_IR1": "pending"
+  },
+  "repos": {
+    "sanitation": {
+      "branch": "dev",
+      "head": "7a8b8c3",
+      "dirty": "4 untracked zentao_* files"
+    },
+    "upms": {
+      "branch": "dev",
+      "head": "d72949b",
+      "dirty": "M jeebootx-seata/bin/sessionStore/root.data"
+    },
+    "web": {
+      "branch": "dev",
+      "head": "2589aae",
+      "dirty": "clean"
+    },
+    "app": {
+      "branch": "dev",
+      "head": "8289f98",
+      "dirty": "M .env.development"
+    }
+  },
+  "jenkins": {
+    "builds": []
+  },
+  "cc_connect": {
+    "version": "1.5.0",
+    "project": "personal",
+    "process_running": true,
+    "session_listed": "personal_73d43c3e (dingtalk, 徐弘祖)",
+    "messages_sent": 1
+  },
+  "zentao_writes": 0
+}

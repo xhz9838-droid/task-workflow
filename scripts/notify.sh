@@ -5,7 +5,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TASK="$1"; STAGE="$2"; BLOCKER="$3"; BODY_FILE="$4"
-SESSION_JSON="$ROOT/execution/$TASK/session.json"
+PROJECT_KEY="${PROJECT_KEY:-}"
+# 任务状态：execution/{project_key}/{task_id}/session.json，回退旧扁平路径
+if [ -n "$PROJECT_KEY" ] && [ -f "$ROOT/execution/$PROJECT_KEY/$TASK/session.json" ]; then
+  SESSION_JSON="$ROOT/execution/$PROJECT_KEY/$TASK/session.json"
+else
+  SESSION_JSON="$ROOT/execution/$TASK/session.json"
+fi
 SID=$(python -I -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('claude_session_id',''))" "$SESSION_JSON")
 PROJECT=$(python -I -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('cc_connect_project',''))" "$SESSION_JSON")
 SESS=$(python -I -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('cc_connect_session',''))" "$SESSION_JSON")
@@ -26,6 +32,8 @@ ARGS=(send --stdin)
 [ -n "$SESS" ] && ARGS+=(-s "$SESS")
 cc-connect "${ARGS[@]}" < "$MSG"
 RC=$?
-python -I "$ROOT/scripts/audit.py" "$TASK" "ccconnect.send" "{\"stage\":\"$STAGE\",\"blocker\":\"$BLOCKER\",\"rc\":$RC}" >/dev/null
+AUDIT_ARGS=("$TASK" "ccconnect.send" "{\"stage\":\"$STAGE\",\"blocker\":\"$BLOCKER\",\"rc\":$RC}")
+[ -n "$PROJECT_KEY" ] && AUDIT_ARGS+=(--project "$PROJECT_KEY")
+python -I "$ROOT/scripts/audit.py" "${AUDIT_ARGS[@]}" >/dev/null
 rm -f "$MSG"
 exit $RC

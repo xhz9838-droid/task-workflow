@@ -1,0 +1,102 @@
+---
+name: zentao-dev-workflow
+description: 通用多 Agent 研发工作流总控。按项目配置加载仓库/技术栈/Agent/工具适配器，执行需求分析→设计→DAG 调度→开发→测试→集成审查→人工审批→任务回写的完整流程。当用户提到"研发工作流"、"执行任务"、"跑工作流"、"/zentao-dev-workflow <项目> <任务>"、"继续工作流"、"恢复任务"、"推进 DAG"时使用。支持多人员、多项目、不同技术栈，可无 ZenTao/Jenkins 独立运行。
+---
+
+# zentao-dev-workflow：通用多 Agent 研发工作流总控
+
+## 调用方式
+
+```text
+/zentao-dev-workflow {project_key} {task_id}
+```
+
+也支持自然语言（"用 jeebootx 项目跑任务 3413"、"继续上次的工作流"）。
+
+`{project_key}` 对应 `config/projects/{project_key}.yaml`。
+`{task_id}` 对应任务状态目录 `execution/{project_key}/{task_id}/`。
+
+## 启动前必检（缺任一项**明确报错**，不猜测）
+
+1. **项目配置**：`config/projects/{project_key}.yaml` 存在
+2. **项目路径**：配置中的 `repositories[].path` 实际存在且为 Git 仓库
+3. **人员配置**：`config/users/{user_id}.yaml` 存在（或 `--user` 显式指定）
+4. **工具适配器**：按项目 `integrations.*` 判断需要哪些适配器，检查 `config/adapters/*.yaml`
+5. **任务来源**：`integrations.task_source` 明确（zentao / none）
+6. **当前身份与权限**：适配器能确认当前用户身份
+
+**禁止**自行猜测：仓库路径、账号、Jenkins Job、任务字段。
+
+## 执行流程
+
+```text
+1. 加载配置（workflow → adapters → project → user → .env）
+2. 获取任务（task_source 适配器；无适配器则从 task-context.md / 人工输入）
+3. 需求分析（architect，读任务描述 + 项目代码 + 项目 CLAUDE.md）
+4. 技术设计（architect / database，产出 design/）
+5. 人工设计确认（通知渠道；未确认不进编码）
+6. 生成任务 DAG（tasks.yaml）
+7. Agent 调度（按 projects/{key}.yaml → agents{} 过滤启用项）
+8. 开发 + 测试（各 Agent 在 worktree 内，遵守文件所有权）
+9. CI 构建（jenkins 适配器，仅白名单 Job）
+10. 失败修复（L1/L2 自动，L3 人工）
+11. QA + 集成审查
+12. 进度回写（task_source 适配器，追加不覆盖）
+13. 最终报告 → 人工确认 → **停在确认前**（不自动关闭任务）
+```
+
+## 核心规则
+
+**严格遵守 `CLAUDE.md` 的 Workflow Continuation Protocol（8 条硬规则）**，尤其：
+
+- **规则 1/2/3**：子 Agent 完成后必须继续推进 DAG，不得提前结束
+- **规则 4**：完成状态须证据核验，不采信 Agent 自述
+- **规则 6**：中断恢复从最近可信检查点继续，不重复已完成节点
+- **规则 8**：工作流 COMPLETED 前需全部节点完成 + QA + 集成审查 + 真实构建结果 + 最终报告；**不得自动关闭业务任务**
+
+## 何时查阅 references
+
+| 场景 | 文件 |
+|---|---|
+| 流程各阶段输入输出、产物位置 | `references/workflow-lifecycle.md` |
+| 子 Agent 返回后的强制动作、DAG 推进 | `references/continuation-protocol.md` |
+| 中断恢复、检查点、状态核验 | `references/recovery-protocol.md` |
+| L1/L2/L3 分级与人工审批 | `references/approval-policy.md` |
+| Agent 启用过滤、并行调度、报告格式 | `references/agent-dispatch.md` |
+| 项目配置加载、技术栈适配、无适配器运行 | `references/project-adaptation.md` |
+
+## templates
+
+| 文件 | 用途 |
+|---|---|
+| `templates/tasks.yaml` | 任务 DAG 模板 |
+| `templates/run-state.json` | 执行状态模板 |
+| `templates/session.json` | 会话上下文模板 |
+| `templates/agent-report.json` | Agent 报告模板 |
+
+## 跨项目与个人级安装
+
+开发源：`{WORKFLOW_HOME}/.claude/skills/zentao-dev-workflow/`
+安装目标：`~/.claude/skills/zentao-dev-workflow/`
+
+```bash
+{WORKFLOW_HOME}/scripts/install.sh          # 安装/更新 Skill + Agents 到个人级
+{WORKFLOW_HOME}/scripts/install.sh --uninstall
+```
+
+在**任意项目根目录**启动 Claude Code 后即可调用：
+```text
+/zentao-dev-workflow {project_key} {task_id}
+```
+
+Skill 按 `project_key` 加载项目配置，按 `task_id` 加载任务状态，**不依赖当前项目目录存在工作流 Skill**。
+
+## 重要约束
+
+- 不写死项目名、人员账号、机器路径、Jenkins Job、任务 ID
+- 不在 Skill / Agent / 脚本中写入凭据
+- 不假设所有业务仓库共存同一父目录
+- 不假设每个项目都需要全部 7 个 Agent
+- 不自动执行部署、服务重启、任务关闭
+- 缺配置时**报缺失项**，不猜测、不编造默认值
+- 无 ZenTao / Jenkins 配置时，仍可执行需求分析、开发、测试、代码审查、状态管理

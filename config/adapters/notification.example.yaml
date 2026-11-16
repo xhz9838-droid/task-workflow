@@ -1,0 +1,21 @@
+# 通知适配器配置（非敏感）
+# 钉钉/CC Connect 凭据在 ~/.cc-connect/config.toml（用户级）
+# 用法：复制为 config/adapters/notification.yaml 后填写
+
+notification:
+  enabled: true
+  provider: dingtalk        # dingtalk | other | none
+
+  cc_connect_bin: "cc-connect"
+  data_dir_env: "CC_CONNECT_DATA_DIR"   # 默认 ~/.cc-connect
+
+  # 每任务 session.json 提供集成会话 key（不含 token）
+  session_keys_file: "session.json"
+  session_fields:
+    project: "integrations.notification.cc_connect_project"
+    session: "integrations.notification.cc_connect_session"
+
+  audit_sent: true
+
+  # L3 消息必含字段
+  required_fields: [project_key, task_id, session_id, blocker_id, stage]

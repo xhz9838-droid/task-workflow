@@ -1,0 +1,37 @@
+# 全局工作流配置（通用，不含个人/项目信息）
+version: 1
+workflow_name: zentao-dev-workflow
+
+# 状态与 worktree 根目录（${WORKFLOW_HOME} 自动解析为本仓库根）
+execution_root: "${WORKFLOW_HOME}/execution"
+worktree_root: "${WORKFLOW_HOME}/../.worktrees"
+
+# 并发
+concurrency:
+  max_parallel_agents: 2
+
+# 重试
+retry:
+  max_attempts: 2
+  strategy: exponential-backoff
+
+# 审批
+approval:
+  levels: [L1, L2, L3]
+  L3_requires_human: true
+
+# 审计
+audit:
+  enabled: true
+  file: "audit.jsonl"
+
+# 报告 schema
+report_schema: "templates/agent-report.json"
+
+# 续接协议
+continuation:
+  enforce: true
+
+# 通知消息模板字段（不含凭据）
+notification:
+  include_fields: [project_key, task_id, session_id, blocker_id, stage]

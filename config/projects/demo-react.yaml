@@ -1,0 +1,45 @@
+# 第二项目示例：Python + React（证明通用性，不复用 jeebootx 配置）
+project:
+  key: demo-react
+  name: Demo React App
+  root: "${DEMO_ROOT}"
+  baseline_branch: main
+
+  repositories:
+    - key: api
+      path: "${DEMO_API}"
+      role: backend
+      technology: python-fastapi
+      enabled: true
+      build_command: "pip install -r requirements.txt"
+      test_command: "pytest -q"
+      lint_command: "ruff check ."
+
+    - key: ui
+      path: "${DEMO_UI}"
+      role: frontend
+      technology: react
+      enabled: true
+      build_command: "npm run build"
+      test_command: "npm test"
+      lint_command: "npm run lint"
+
+  tech_stack:
+    backend: Python
+    frontend: React
+    database: PostgreSQL
+
+  # 纯 Web 项目：不需要 java-backend / mobile-app / database
+  agents:
+    dw-architect: true
+    dw-database: true
+    dw-java-backend: false
+    dw-web-frontend: true
+    dw-mobile-app: false
+    dw-qa-engineer: true
+    dw-integration-reviewer: true
+
+  integrations:
+    task_source: none            # 不用 ZenTao
+    ci: none                     # 不用 Jenkins
+    notification: none           # 不用钉钉

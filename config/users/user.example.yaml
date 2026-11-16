@@ -1,0 +1,20 @@
+# 人员配置模板（不含真实账号/凭据）
+# 复制为 config/users/{user_id}.yaml 后填写；真实配置不提交公共仓库
+
+user:
+  id: "${USER_ID}"
+  display_name: "${USER_DISPLAY_NAME}"
+
+# 任务来源身份（凭据不在这里；ZenTao 账号在 ~/.claude/skills/zentao/_shared/config.json）
+task_source:
+  provider: zentao
+  account: "${ZENTAO_USER}"
+
+# 通知偏好
+notification:
+  provider: dingtalk
+  enabled: true
+
+preferences:
+  language: zh-CN
+  timezone: Asia/Shanghai

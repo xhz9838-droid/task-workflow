@@ -1,0 +1,65 @@
+# jeebootx 项目配置（当前项目实际值，无凭据）
+# 路径用环境变量引用，实际值在 .env（gitignored）
+
+project:
+  key: jeebootx
+  name: jeebootx
+  root: "${JEEBOOTX_ROOT}"
+  baseline_branch: dev
+
+  repositories:
+    - key: sanitation
+      path: "${JEEBOOTX_SANITATION}"
+      role: backend
+      technology: java-spring-boot
+      enabled: true
+      build_command: "mvn -q clean package -DskipTests"
+      test_command: "mvn test"
+      lint_command: ""
+
+    - key: upms
+      path: "${JEEBOOTX_UPMS}"
+      role: backend
+      technology: java-spring-boot
+      enabled: true
+      build_command: "mvn -q clean package -DskipTests"
+      test_command: "mvn test"
+      lint_command: ""
+
+    - key: web
+      path: "${JEEBOOTX_WEB}"
+      role: frontend
+      technology: vue
+      enabled: true
+      build_command: "npm run build"
+      test_command: ""
+      lint_command: "npm run lint:eslint"
+
+    - key: app
+      path: "${JEEBOOTX_APP}"
+      role: mobile
+      technology: uni-app
+      enabled: true
+      build_command: ""
+      test_command: ""
+      lint_command: "pnpm lint"
+
+  tech_stack:
+    backend: Java
+    frontend: Vue
+    mobile: uni-app
+    database: MySQL
+
+  agents:
+    dw-architect: true
+    dw-database: true
+    dw-java-backend: true
+    dw-web-frontend: true
+    dw-mobile-app: true
+    dw-qa-engineer: true
+    dw-integration-reviewer: true
+
+  integrations:
+    task_source: zentao
+    ci: jenkins
+    notification: dingtalk

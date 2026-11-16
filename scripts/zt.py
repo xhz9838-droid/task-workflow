@@ -17,9 +17,20 @@ import os
 import subprocess
 import sys
 
-SKILLS = os.path.expanduser("~/.claude/skills")
-CONFIG = os.path.join(SKILLS, "zentao", "_shared", "config.json")
-MANAGE = os.path.join(SKILLS, "zentao-tasks", "scripts", "manage_tasks.py")
+# ZenTao 适配器路径：优先 config/adapters/zentao.yaml / 环境变量，回退用户级 Skill 默认位置。
+# 不写死用户名与项目；凭据仅在 skill 级 config.json（gitignored），不进日志。
+SKILLS = os.path.expanduser(os.environ.get("ZENTAO_SKILL_DIR") or "~/.claude/skills")
+CONFIG = os.environ.get("ZENTAO_CONFIG") or os.path.join(SKILLS, "zentao", "_shared", "config.json")
+MANAGE = os.environ.get("ZENTAO_MANAGE") or os.path.join(SKILLS, "zentao-tasks", "scripts", "manage_tasks.py")
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _config import load_config as _lc, get as _g
+    _ad = _g(_lc(), "zentao", {}) or {}
+    SKILLS = _ad.get("skill_dir") or SKILLS
+    CONFIG = _ad.get("config_path") or CONFIG
+    MANAGE = _ad.get("manage_script") or MANAGE
+except Exception:
+    pass
 sys.path.insert(0, SKILLS)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
