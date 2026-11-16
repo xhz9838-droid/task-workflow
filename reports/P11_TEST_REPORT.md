@@ -112,7 +112,7 @@ python -I agent-manager/tests/test_integration.py
 | Windows 兼容性 | **PASS** | UTF-8 强制、ctypes PID、CREATE_NEW_PROCESS_GROUP、进程树终止 |
 | Agent 生命周期 | **PASS** | 启动/超时/取消/异常退出 |
 | 异常恢复 | **PASS** | SQLite 持久化 + 新实例读取 |
-| 禅道适配器 | **PASS** | dry_run 验证；真实写入走既有状态流转规则 |
+| 禅道适配器 | **PASS** | dry_run 验证；`task_finish` 门禁通过后可自动执行+读回确认，`task_close` 始终禁止 |
 | 钉钉通知 | **PASS** | dry_run + 去重；真实发送走 CC Connect CLI |
 | Jenkins | **MOCK** | 基础设施未就绪 |
 
@@ -121,7 +121,7 @@ python -I agent-manager/tests/test_integration.py
 | 项 | 原因 | 恢复条件 |
 |---|---|---|
 | 真实 Jenkins 构建 | 无 `ai-test-*` Job（现有均为生产部署 Job） | 创建测试 Job + 节点凭据 + Tool Check |
-| 真实禅道写入 | 需本人确认后执行 | dry_run 通过，等待授权 |
+| 真实禅道写入 | ~~需本人确认~~ **已授权** | `task_finish` 经 Verifier 门禁后可自动执行（须读回确认）；`task_close` 始终禁止自动 |
 | Token 使用量统计 | 子进程元数据不可可靠获取 | 需 Claude Code 会话级指标接口 |
 | 工具调用次数 | 同上 | 同上 |
 

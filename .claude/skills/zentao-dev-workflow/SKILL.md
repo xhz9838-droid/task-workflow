@@ -42,7 +42,7 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 10. 失败修复（L1/L2 自动，L3 人工）
 11. QA + 集成审查
 12. 进度回写（task_source 适配器，追加不覆盖）
-13. 最终报告 → 人工确认 → **停在确认前**（不自动关闭任务）
+13. 最终报告 → Verifier 门禁通过 → 自动 task_finish（读回确认）→ **不自动 task_close**
 ```
 
 ## 核心规则
@@ -52,7 +52,7 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 - **规则 1/2/3**：子 Agent 完成后必须继续推进 DAG，不得提前结束
 - **规则 4**：完成状态须证据核验，不采信 Agent 自述
 - **规则 6**：中断恢复从最近可信检查点继续，不重复已完成节点
-- **规则 8**：工作流 COMPLETED 前需全部节点完成 + QA + 集成审查 + 真实构建结果 + 最终报告；**不得自动关闭业务任务**
+- **规则 8**：工作流 COMPLETED 前需全部节点完成 + QA + 集成审查 + 真实构建结果 + 最终报告；`task_finish` 经 Verifier 门禁后可自动执行（须读回确认）；**`task_close` 始终禁止自动**
 
 ## 何时查阅 references
 
@@ -64,6 +64,7 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 | L1/L2/L3 分级与人工审批 | `references/approval-policy.md` |
 | Agent 启用过滤、并行调度、报告格式 | `references/agent-dispatch.md` |
 | 项目配置加载、技术栈适配、无适配器运行 | `references/project-adaptation.md` |
+| 重大决策人工介入（P0/P1/P2、阻塞等待、钉钉回复、Session 恢复） | `references/human-decision-policy.md` |
 
 ## templates
 

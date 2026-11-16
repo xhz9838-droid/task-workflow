@@ -9,7 +9,9 @@
     - 不覆盖原有备注或他人信息
     - 不伪造工时/完成日期
     - 遵循状态流转：wait→doing 须满足必填字段；doing→done 须钉钉人工确认
-    - 禁止自动 task_finish / task_close
+    - task_finish（doing→done）：Verifier 质量门禁通过后**允许自动**执行
+    - task_close（→closed）：**始终禁止**自动执行
+    - **写入后必须读回禅道状态确认结果**
     - 回写失败保存待写事件，不丢执行结果
     - 重试回写避免重复追加相同记录
     - 回写后读回核验
@@ -156,13 +158,107 @@ class ZenTaoReporter:
             return False, f"缺少必填字段: {', '.join(missing)}（不自行估算，需本人提供）"
         return True, ""
 
-    def can_finish(self, *, human_confirmed: bool, consumed=None, left=None) -> tuple[bool, str]:
-        """doing→done 前置检查。**必须本人明确确认**。"""
-        if not human_confirmed:
-            return False, "禁止自动 task_finish：须经钉钉人工确认"
+    def can_finish(self, *, verifier_passed: bool = False, human_confirmed: bool = False,
+                   consumed=None, left=None) -> tuple[bool, str]:
+        """doing→done 前置检查。
+
+        授权策略（2026-11-16 更新）：
+            Verifier 质量门禁通过 → **允许自动 task_finish**
+            未经门禁 → 仍需人工确认
+        """
+        if not verifier_passed and not human_confirmed:
+            return False, "Verifier 质量门禁未通过且无人工确认，不执行 task_finish"
         if consumed is None or left is None:
             return False, "consumed/left 未提供，不推算工时"
         return True, ""
+
+    def can_close(self) -> tuple[bool, str]:
+        """done→closed 检查。**始终禁止自动执行**。"""
+        return False, "禁止自动 task_close：终态关闭须由本人在禅道手动操作"
+
+    # ------------------------------------------------------- 状态流转执行
+    def finish(
+        self,
+        *,
+        task_id: str,
+        project_key: str,
+        verifier_passed: bool,
+        consumed=None,
+        left=None,
+        finished_date: str | None = None,
+        real_started: str | None = None,
+        human_confirmed: bool = False,
+    ) -> dict:
+        """执行 task_finish（doing→done）+ **读回确认**。
+
+        - 仅在 Verifier 门禁通过（或人工确认）后执行
+        - 工时/日期不推算：consumed/left/finished_date 必须由调用方提供
+        - 写入后**必须读回禅道状态确认结果**
+        - 不执行 task_close
+        """
+        ok, reason = self.can_finish(
+            verifier_passed=verifier_passed,
+            human_confirmed=human_confirmed,
+            consumed=consumed,
+            left=left,
+        )
+        if not ok:
+            return {"ok": False, "reason": reason, "stage": "precheck"}
+
+        if finished_date is None:
+            return {"ok": False, "reason": "finishedDate 未提供，不推算完成日期", "stage": "precheck"}
+
+        payload = {
+            "consumed": consumed,
+            "left": left,
+            "finishedDate": finished_date,
+            "realStarted": real_started,
+            "verifier_passed": verifier_passed,
+        }
+
+        if self.dry_run:
+            self._log(f"[dry-run] task_finish task={task_id}")
+            return {"ok": True, "dry_run": True, "payload": payload}
+
+        args = [
+            "finish", "--task", str(task_id),
+            "--consumed", str(consumed), "--left", str(left),
+            "--finishedDate", finished_date,
+        ]
+        if real_started:
+            args += ["--realStarted", real_started]
+        try:
+            out = self._run_zt(args, timeout=120)
+        except Exception as e:
+            self._enqueue(task_id, project_key, "finish", payload, str(e))
+            raise ZenTaoWriteError(f"task_finish 失败（已存待写队列）: {e}")
+
+        # **读回确认**：必须核实 status 已变 done
+        try:
+            after = self.get_task(task_id)
+        except Exception as e:
+            return {"ok": False, "reason": f"finish 已调用但读回失败: {e}", "stage": "readback"}
+
+        status = str(after.get("status", "")).lower()
+        confirmed = status == "done"
+        result = {
+            "ok": confirmed,
+            "status_after": status,
+            "confirmed": confirmed,
+            "output_tail": out[-200:],
+            "payload": payload,
+        }
+        if not confirmed:
+            self._log(f"⚠ task_finish 后读回 status={status}（期望 done）")
+        return result
+
+    def close_blocked(self, task_id: str = "") -> dict:
+        """明确记录：不执行 task_close。"""
+        return {
+            "ok": False,
+            "reason": "禁止自动 task_close",
+            "note": f"任务 {task_id} 的终态关闭须由本人在禅道手动操作",
+        }
 
     # ------------------------------------------------------- 内部
     def _run_zt(self, args: list[str], timeout: int = 90) -> str:

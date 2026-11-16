@@ -41,7 +41,8 @@
 - `.worktrees/jeebootx-ui-zt3413`（W1 commit `1c302d6`）未动
 - `scripts/jenkins_run.py_a`、`scripts/start-claude.sh`（用户文件）未动
 - 业务仓库脏文件未动
-- **未自动部署、未自动关闭禅道任务**
+- **未自动部署**
+- 禅道 `task_finish` 经 Verifier 门禁后允许自动执行（须读回确认）；`task_close` 始终禁止自动
 
 ## 二、测试结果
 
@@ -89,7 +90,7 @@ python -I agent-manager/tests/test_integration.py
 |---|---|---|
 | Token 使用量 | NOT_RUN | 无法从子进程可靠获取 |
 | 工具调用次数 | NOT_RUN | 需 Claude Code 会话元数据 |
-| 真实禅道写入 | NOT_RUN | 需本人确认后执行（dry_run 验证通过） |
+| 真实禅道写入 | **已授权** | `task_finish` 经 Verifier 门禁后自动执行+读回确认；`task_close` 禁止自动 |
 | 真实 Jenkins 构建 | BLOCKED | 无 `ai-test-*` Job |
 
 ## 三、Git 信息
@@ -174,7 +175,7 @@ L: file_count=12, "跨仓库新增薪酬审批 DDL 接口契约"
 
 | 模块 | 状态 |
 |---|---|
-| `zentao_reporter` | dry_run 通过；真实写入需本人确认 |
+| `zentao_reporter` | dry_run 通过；`task_finish` 门禁后自动+读回确认，`task_close` 禁止 |
 | `notifier` | dry_run + 去重通过；真实发送走 CC Connect |
 | `jenkins_adapter` | Mock + 白名单通过；真实执行待 `ai-test-*` |
 | `runner` | 类就绪；真实拉起 Claude Code 待 CLI 封装 |

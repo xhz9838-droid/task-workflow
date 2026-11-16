@@ -45,7 +45,7 @@
 
 ## 硬约束
 
-1. **任务系统**：经 `config/adapters/*.yaml` 启用的适配器访问（ZenTao / 其他）。只操作本人任务。字段编辑只用 PUT + 读回核验；进度**追加**不覆盖原文；不编造工时/日期/百分比；状态流转仅经适配器的正式动作端点；**不自动关闭业务任务**。
+1. **任务系统**：经 `config/adapters/*.yaml` 启用的适配器访问（ZenTao / 其他）。只操作本人任务。字段编辑只用 PUT + 读回核验；进度**追加**不覆盖原文；不编造工时/日期/百分比；状态流转仅经适配器的正式动作端点；`task_finish` 经 Verifier 门禁后可自动执行并读回确认；**`task_close` 始终禁止自动执行**。
 2. **CI**：只允许触发项目配置白名单内的 Job（`config/adapters/jenkins.yaml → jobs[]`，或项目配置的 `integrations.ci`）。部署 Job 一律禁止自动触发。结果以**最终 `result` + 测试报告**为准；FAILURE/ABORTED/NOT_BUILT 绝不判为通过；UNSTABLE 必须分析。
 3. **人工决策**：经 `scripts/notify.sh`（通知适配器）发送，消息必须带 `project_key`、`task_id`、SessionID、BlockerID、阶段。设计未确认前不写业务代码。
 4. **凭据**：不写入仓库、日志、文档、CI 参数。凭据只放 `.env`（gitignored）或用户级工具配置。
@@ -156,4 +156,6 @@
 
 **工作流完成 ≠ 业务任务关闭。**
 
-**不得**自动执行任务系统的 `task_finish` / `task_close` / 等价终态操作。
+**状态流转授权（2026-11-16 更新）**：
+- `task_finish`（doing→done）：**Verifier 质量门禁通过后允许自动执行**；写入后必须读回禅道状态确认结果。
+- `task_close`（→closed）：**始终禁止自动执行**，须本人在禅道手动操作。

@@ -116,7 +116,8 @@ Workflow Progress 是否推进到下一阶段
 ### 安全约束
 
 - 不自动部署、不重启业务服务
-- 不自动执行禅道 `task_finish` / `task_close`
+- 禅道 `task_finish`（→done）：Verifier 门禁通过后允许自动执行，且**必须读回确认**
+- 禅道 `task_close`（→closed）：**始终禁止**自动执行
 - 不伪造工时、完成日期、测试结果
 - Jenkins 只允许 `ai-test-*`，禁止生产构建/部署
 - 凭据不写入配置/日志/命令行

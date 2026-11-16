@@ -326,6 +326,59 @@ def test_state_recovery() -> None:
     sm2.close()
 
 
+
+
+# --------------------------------------------------------------- 禅道状态流转策略
+def test_zentao_finish_policy() -> None:
+    section("禅道 task_finish/task_close 策略（2026-11-16 授权）")
+    from zentao_reporter import ZenTaoReporter
+
+    z = ZenTaoReporter(dry_run=True)
+
+    # task_finish：Verifier 门禁通过后允许自动
+    ok, _ = z.can_finish(verifier_passed=True, consumed=8, left=0)
+    check("门禁通过 → 允许 task_finish", ok is True)
+
+    ok2, _ = z.can_finish(verifier_passed=False, human_confirmed=False, consumed=8, left=0)
+    check("门禁未过+无人工 → 拒绝 task_finish", ok2 is False)
+
+    ok3, _ = z.can_finish(verifier_passed=False, human_confirmed=True, consumed=8, left=0)
+    check("人工确认可兜底 task_finish", ok3 is True)
+
+    ok4, r4 = z.can_finish(verifier_passed=True, consumed=None, left=None)
+    check("缺工时 → 拒绝（不推算）", ok4 is False and "不推算" in r4)
+
+    # task_close：始终禁止
+    ok5, r5 = z.can_close()
+    check("task_close 始终禁止", ok5 is False and "禁止" in r5)
+
+    rc = z.close_blocked("3413")
+    check("close_blocked 明确拒绝", rc["ok"] is False)
+
+    # finish 缺 finishedDate → 拒绝（不推算日期）
+    r6 = z.finish(task_id="T1", project_key="p", verifier_passed=True,
+                  consumed=8, left=0, finished_date=None)
+    check("缺 finishedDate → 拒绝", r6["ok"] is False and "不推算" in r6["reason"])
+
+    # finish 门禁未过 → precheck 拒绝
+    r7 = z.finish(task_id="T1", project_key="p", verifier_passed=False,
+                  consumed=8, left=0, finished_date="2026-11-17")
+    check("finish 门禁未过 → precheck 拒绝", r7["ok"] is False and r7.get("stage") == "precheck")
+
+    # finish 成功路径（dry_run）含读回确认语义
+    r8 = z.finish(task_id="T1", project_key="p", verifier_passed=True,
+                  consumed=8, left=0, finished_date="2026-11-17")
+    check("finish 门禁通过 → 执行", r8["ok"] is True)
+
+    # 配置项存在
+    from cli_util import load_config
+    cfg = load_config()
+    zc = cfg.get("zentao", {})
+    check("配置含 allow_auto_finish_after_verification",
+          "allow_auto_finish_after_verification" in zc)
+    check("配置 allow_auto_close=false", zc.get("allow_auto_close") is False)
+    check("配置 require_readback=true", zc.get("require_readback") is True)
+
 # --------------------------------------------------------------- 主入口
 def main() -> int:
     print("P11 Agent Execution Manager — 集成测试")
@@ -340,6 +393,7 @@ def main() -> int:
     test_notifier()
     test_jenkins()
     test_state_recovery()
+    test_zentao_finish_policy()
 
     print("\n" + "=" * 60)
     p = sum(1 for _, s, _ in _results if s == PASS)

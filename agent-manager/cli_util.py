@@ -103,8 +103,9 @@ _DEFAULTS = {
     "zentao": {
         "enabled": True,
         "dry_run": True,
-        "allow_auto_finish": False,
+        "allow_auto_finish_after_verification": True,
         "allow_auto_close": False,
+        "require_readback": True,
     },
 }
 

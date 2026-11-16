@@ -122,5 +122,9 @@
 
 ## 人工确认 → 停止
 
-**不自动执行** `task_finish` / `task_close` / 等价终态操作。
+**状态流转授权（2026-11-16 更新）**：
+- `task_finish`（doing→done）：Verifier 质量门禁通过后**允许自动执行**，写入后**必须读回禅道状态确认结果**
+- `task_close`（→closed）：**始终禁止自动执行**，须本人手动操作
+
+工时/日期不推算：`consumed`/`left`/`finishedDate` 必须由调用方提供。
 工作流标记 `COMPLETED` ≠ 业务任务关闭。
