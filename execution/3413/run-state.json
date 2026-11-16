@@ -1,7 +1,7 @@
 {
   "task_id": "3413",
-  "stage": "T02-analysis",
-  "updated_at": "2026-11-16T14:02+08:00",
+  "stage": "T05-ccconnect-design-confirm",
+  "updated_at": "2026-11-16T14:18+08:00",
   "zentao": {
     "status": "wait",
     "owner": "xuhongzu",
@@ -19,9 +19,9 @@
   "milestones": {
     "T01_init": "done: git init, .gitignore, CLAUDE.md, 7 agents, Jenkinsfile.ai-test, scripts (zt.py, jenkins_run.py, notify.sh, audit.py), session.json, committed 63b12bc",
     "T02_zentao_read": "done (read-only)",
-    "T02_repo_analysis": "Web UI done; Backend done; mobile (aa20ad50c52dc44f6) running; environment-analysis.md and repository-mapping.md written based on completed agents",
+    "T02_repo_analysis": "done: all 3 agents completed (backend ae49c65109895c10f, web a7c5e442bab3a35ac, mobile aa20ad50c52dc44f6)",
     "T03_agents": "done: .claude/agents/ 7 files (not yet reviewed/committed)",
-    "T04_design": "not_started"
+    "T04_design": "done: requirements.md, architecture.md, ddl.sql (no changes), openapi.yaml (existing endpoints), tasks.yaml, acceptance-matrix.md, progress.md"
   },
   "repos": {
     "sanitation": {

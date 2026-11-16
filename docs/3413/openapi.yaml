@@ -1,0 +1,70 @@
+openapi: "3.0.3"
+info:
+  title: 薪酬审批 Web 端（#3413）
+  description: |
+    已有端点，Web 端直接复用。本次无需新增或修改 API。
+    来源：SanitationPayrollBatchController（jeebootx-sanitation-biz）
+  version: "1.0.0"
+paths:
+  /payrollBatch/{batchId}/summary:
+    get:
+      summary: 获取薪酬批次汇总
+      description: 返回 PayrollSummaryDTO，用于审批弹框展示。与移动端调用同一端点。
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayrollSummaryDTO"
+  /payrollBatch/{batchId}/approve:
+    post:
+      summary: 审批通过薪酬批次
+      description: |
+        项目经理审批通过。后端从 SecurityUtils 获取当前用户作为 approverId。
+        状态校验：只能从 PENDING_APPROVAL 转换到 APPROVED。
+        同步完成 wflow 待办（如 taskId 非空）。
+        不支持驳回（业务决定：有疑问线下沟通，人事撤回修改后重新提交）。
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: taskId
+          in: query
+          required: false
+          description: wflow 待办任务 ID。Web 端从批次列表直接审批时不传。
+          schema: { type: string }
+      responses:
+        "200":
+          description: 审批成功
+        "400":
+          description: 状态非 PENDING_APPROVAL 或其他校验失败
+components:
+  schemas:
+    PayrollSummaryDTO:
+      type: object
+      properties:
+        month:         { type: string, description: "薪酬月份 YYYY-MM" }
+        headcount:     { type: integer, description: "人数" }
+        totalSalary:   { type: number, description: "综合工资合计" }
+        totalAbsent:   { type: number, description: "缺勤工资合计" }
+        totalOvertime: { type: number, description: "临时加班合计" }
+        totalSubsidy:  { type: number, description: "顶岗/岗位补贴合计" }
+        totalHoliday:  { type: number, description: "节假日补贴合计" }
+        totalPenalty:  { type: number, description: "处罚合计" }
+        totalBonus:    { type: number, description: "奖励合计" }
+        totalHeat:     { type: number, description: "高温补贴合计" }
+        totalOtherAdd: { type: number, description: "其他补款合计" }
+        totalPayable:  { type: number, description: "合计（应发）" }
+        totalNet:      { type: number, description: "实发工资合计" }
+        totalSocial:   { type: number, description: "社保合计" }
+        totalFund:     { type: number, description: "公积金合计" }
+        totalTax:      { type: number, description: "个税合计" }
+        batchId:       { type: integer, format: int64, description: "批次 ID" }
+        status:        { type: string, description: "批次状态" }

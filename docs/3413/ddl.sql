@@ -1,0 +1,36 @@
+-- 禅道 #3413：无需新增 DDL
+-- 薪酬审批功能的数据库表已存在：
+--   sanitation_payroll_batch（含 status/approverId/approveTime/processInstanceId）
+--   sanitation_payroll_item（薪酬明细）
+-- 权限码 san_payroll_approve 已存在于 sys_menu（V20261104_001）
+-- 本次仅 Web 前端改动，不涉及数据库变更
+
+-- 参考：已有表结构（来自 db/二期/jeebootx_sanitation1021.sql :920-948）
+-- CREATE TABLE sanitation_payroll_batch (
+--   id                BIGINT PRIMARY KEY,
+--   dept_id           BIGINT,
+--   batch_code        VARCHAR(64),
+--   payroll_month     DATE,
+--   total_person_count INT,
+--   total_salary      DECIMAL(12,2),
+--   total_payable     DECIMAL(12,2),
+--   total_net         DECIMAL(12,2),
+--   status            VARCHAR(32) DEFAULT 'DRAFT',  -- DRAFT / PENDING_APPROVAL / APPROVED
+--   submitter_id      BIGINT,
+--   submit_time       DATETIME,
+--   approver_id       BIGINT,
+--   approve_time      DATETIME,
+--   process_instance_id VARCHAR(64),
+--   prev_month_source VARCHAR(32),
+--   imported_flag     CHAR(1) DEFAULT '0',
+--   remarks           VARCHAR(500),
+--   del_flag          CHAR(1) DEFAULT '0',
+--   tenant_id         BIGINT,
+--   create_by         BIGINT,
+--   create_time       DATETIME,
+--   update_by         BIGINT,
+--   update_time       DATETIME
+-- );
+
+-- 本次无变更
+SELECT 'No DDL changes required for #3413' AS status;

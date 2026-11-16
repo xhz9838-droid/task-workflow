@@ -1,0 +1,195 @@
+# 禅道 #3413 — 任务拆分
+
+## 总览
+
+| 任务 | Agent | 依赖 | 预计改动 |
+|---|---|---|---|
+| W1 | web-frontend | 设计确认 | Batch/index.vue 新增审批按钮 + 汇总弹框 |
+| QA1 | qa-engineer | W1 | 验收测试与报告 |
+| IR1 | integration-reviewer | W1, QA1 | 代码审查 + 契约一致性核对 |
+
+## W1：Web 端审批按钮与弹框
+
+**Agent**: web-frontend
+**仓库**: `jeebootx-ui`
+**Worktree**: `D:/WorkSpace/.worktrees/jeebootx-ui-zt3413`，分支 `ai/zt-3413`
+
+### 文件清单
+
+| 文件 | 操作 | 说明 |
+|---|---|---|
+| `src/views/sanitation/Personnel/Salary/Batch/index.vue` | 修改 | ① 导入 approveSalaryBatch、getSalarySummary；② 已提交操作列新增审批按钮（v-auth="san_payroll_approve"）；③ 新增汇总弹框（el-dialog + el-descriptions 13 字段）；④ 审批确认逻辑 |
+| `src/api/sanitation/salary.ts` | 不改 | approveSalaryBatch、getSalarySummary 已存在，仅需在 Batch 页 import |
+
+### 具体改动
+
+#### 1) 导入新增（`<script setup>` 顶部）
+
+```ts
+import { approveSalaryBatch, getSalarySummary } from '@/api/sanitation/salary'
+```
+
+#### 2) 审批按钮（操作列模板，「已提交」状态分支）
+
+在现有 `<template v-if="scope.row.status === '已提交'">` 块中，于「撤回审批」按钮前添加：
+
+```html
+<el-button v-auth="'san_payroll_approve'" type="success" link
+  @click="openApproveDialog(scope.row)">
+  审批
+</el-button>
+```
+
+按钮顺序（从左到右）：详情 → 审批 → 撤回审批
+
+#### 3) 汇总弹框（模板，Batch/index.vue 内 `<template>` 末尾）
+
+```html
+<el-dialog v-model="approveDialog.visible" title="薪酬汇总审批" width="640px"
+  :close-on-click-modal="false" destroy-on-close>
+  <el-descriptions v-loading="approveDialog.loading" :column="2" border>
+    <el-descriptions-item label="月份">{{ approveDialog.summary.month }}</el-descriptions-item>
+    <el-descriptions-item label="人数">{{ approveDialog.summary.headcount }} 人</el-descriptions-item>
+    <el-descriptions-item label="综合工资">{{ fmtMoney(approveDialog.summary.totalSalary) }}</el-descriptions-item>
+    <el-descriptions-item label="缺勤工资">{{ fmtMoney(approveDialog.summary.totalAbsent) }}</el-descriptions-item>
+    <el-descriptions-item label="临时加班">{{ fmtMoney(approveDialog.summary.totalOvertime) }}</el-descriptions-item>
+    <el-descriptions-item label="顶岗/岗位补贴">{{ fmtMoney(approveDialog.summary.totalSubsidy) }}</el-descriptions-item>
+    <el-descriptions-item label="节假日补贴">{{ fmtMoney(approveDialog.summary.totalHoliday) }}</el-descriptions-item>
+    <el-descriptions-item label="处罚">{{ fmtMoney(approveDialog.summary.totalPenalty) }}</el-descriptions-item>
+    <el-descriptions-item label="奖励">{{ fmtMoney(approveDialog.summary.totalBonus) }}</el-descriptions-item>
+    <el-descriptions-item label="高温补贴">{{ fmtMoney(approveDialog.summary.totalHeat) }}</el-descriptions-item>
+    <el-descriptions-item label="其他补款">{{ fmtMoney(approveDialog.summary.totalOtherAdd) }}</el-descriptions-item>
+    <el-descriptions-item label="合计（应发）">{{ fmtMoney(approveDialog.summary.totalPayable) }}</el-descriptions-item>
+    <el-descriptions-item label="实发工资">{{ fmtMoney(approveDialog.summary.totalNet ?? 0) }}</el-descriptions-item>
+  </el-descriptions>
+  <template #footer>
+    <el-button @click="approveDialog.visible = false">取消</el-button>
+    <el-button type="primary" :loading="approveDialog.submitting" @click="doApprove">
+      审批通过
+    </el-button>
+  </template>
+</el-dialog>
+```
+
+#### 4) 审批逻辑（`<script setup>` 内）
+
+```ts
+// 新增响应式状态
+const approveDialog = reactive({
+  visible: false,
+  loading: false,
+  submitting: false,
+  batchId: '' as string,
+  summary: {} as Record<string, any>,
+})
+
+async function openApproveDialog(row: any) {
+  approveDialog.visible = true
+  approveDialog.loading = true
+  approveDialog.batchId = row.id
+  approveDialog.summary = {}
+  try {
+    const res = await getSalarySummary(row.id)
+    approveDialog.summary = res?.data ?? res ?? {}
+  } catch {
+    ElMessage.error('获取薪酬汇总失败')
+    approveDialog.visible = false
+  } finally {
+    approveDialog.loading = false
+  }
+}
+
+async function doApprove() {
+  try {
+    await ElMessageBox.confirm('确认审批通过该薪酬批次？', '审批确认', {
+      confirmButtonText: '确认通过',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return // 用户取消
+  }
+  approveDialog.submitting = true
+  try {
+    await approveSalaryBatch(approveDialog.batchId)
+    ElMessage.success('审批通过')
+    approveDialog.visible = false
+    refresh() // 刷新列表
+  } catch (e: any) {
+    ElMessage.error(e?.message || '审批失败')
+  } finally {
+    approveDialog.submitting = false
+  }
+}
+```
+
+### 约束
+
+- 按钮须 `v-auth="'san_payroll_approve'"` 控制可见性
+- 汇总字段顺序和标签严格对齐移动端 `summaryRows`（13 字段，无 subtotal）
+- 金额格式化复用 `@/views/sanitation/utils/format.ts` 的 `fmtMoney`
+- 不新增 CSS（复用现有 `el-descriptions` / `el-table` 样式）
+- 遵循项目已有的 import 方式（auto-import Vue API / Element Plus 组件）
+
+### 验收
+
+- [ ] 项目经理在「已提交」行看到「审批」按钮
+- [ ] HR（仅有 san_payroll_submit）看不到「审批」按钮
+- [ ] 「未提交」「已审批」行不显示「审批」按钮
+- [ ] 点击审批弹出汇总弹框，字段与移动端一致
+- [ ] 审批通过后列表刷新，状态变为「已审批」
+- [ ] 汇总接口失败时弹框关闭并提示错误
+- [ ] 审批接口失败时弹框不关闭并提示错误
+
+### 交付物
+
+- 修改后的 `Batch/index.vue`
+- `execution/3413/agent-reports/web-frontend-1.json`
+
+---
+
+## QA1：验收测试
+
+**Agent**: qa-engineer
+**仓库**: `task-workflow`（编排仓库）
+**依赖**: W1
+
+### 任务
+
+1. 对照 acceptance-matrix.md 逐项验证 W1 改动
+2. 检查代码：按钮权限指令、字段对齐、错误处理
+3. 检查 git diff：是否有越权修改
+4. 输出验收报告
+
+### 交付物
+
+- `execution/3413/agent-reports/qa-engineer-1.json`
+
+---
+
+## IR1：联调与最终验收
+
+**Agent**: integration-reviewer
+**仓库**: 所有（只读）
+**依赖**: W1, QA1
+
+### 任务
+
+1. 核对 Web 端调用 vs openapi.yaml 一致性
+2. 核对 Web 端字段 vs 移动端 `PayrollSummary` 接口一致性
+3. 安全检查：权限指令、越权风险
+4. 填写 acceptance-matrix.md 验收结论草稿
+
+### 交付物
+
+- `execution/3413/agent-reports/integration-reviewer-1.json`
+
+---
+
+## 任务 DAG
+
+```
+[设计确认] → W1 → QA1 → IR1 → [最终验收 → 本人确认 → task_finish]
+```
+
+W1、QA1、IR1 串行执行（QA 依赖 W1 完成，IR 依赖 QA 结果）。
