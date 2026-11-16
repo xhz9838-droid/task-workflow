@@ -1,0 +1,22 @@
+# 凭据与本地配置（禁止入库）
+.env
+.env.*
+!.env.example
+*.local.json
+.claude/settings.local.json
+config.json
+
+# Claude / CC Connect 会话敏感信息
+execution/**/session.local.json
+.cc-connect/
+
+# Jenkins 原始日志（可能含环境信息，只保留脱敏摘要）
+execution/**/jenkins/*.console.log
+execution/**/jenkins/raw/
+
+# 运行产物
+__pycache__/
+*.pyc
+*.log
+node_modules/
+.worktrees/

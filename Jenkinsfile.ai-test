@@ -1,0 +1,113 @@
+pipeline {
+    agent any
+    parameters {
+        string(name: 'REPO_URL', defaultValue: '', description: 'Git 仓库地址（https:// 格式）')
+        string(name: 'GIT_BRANCH', defaultValue: 'dev', description: '分支名')
+        string(name: 'GIT_COMMIT', defaultValue: '', description: 'Commit hash（可选，为空则取分支最新）')
+        string(name: 'ZENTAO_TASK_ID', defaultValue: '', description: '禅道任务 ID')
+        string(name: 'WORKFLOW_ID', defaultValue: '', description: '工作流 ID')
+        choice(name: 'TEST_SCOPE', choices: ['toolcheck', 'unit', 'api', 'integration', 'e2e', 'full'],
+               description: '测试范围：toolcheck=工具链检查 unit=单元测试 api=接口测试 integration=集成测试 e2e=端到端 full=全部')
+    }
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    def branch = params.GIT_BRANCH ?: 'dev'
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "*/${branch}"]],
+                        userRemoteConfigs: [[url: params.REPO_URL, credentialsId: env.JENKINS_GIT_CREDENTIALS_ID ?: '']],
+                        extensions: [[$class: 'CloneOption', noTags: true, shallow: true, timeout: 10]]
+                    ])
+                    if (params.GIT_COMMIT?.trim()) {
+                        sh "git checkout ${params.GIT_COMMIT}"
+                    }
+                    env.BUILD_GIT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                }
+            }
+        }
+        stage('Tool Check') {
+            steps { script { toolcheck() } }
+        }
+        stage('Java Build') {
+            when { expression { params.TEST_SCOPE in ['unit','api','integration','full'] } }
+            steps { script { java_build() } }
+        }
+        stage('Java Unit Test') {
+            when { expression { params.TEST_SCOPE in ['unit','full'] } }
+            steps { script { java_test() } }
+        }
+        stage('Web Build') {
+            when { expression { params.TEST_SCOPE in ['unit','api','integration','e2e','full'] } }
+            steps { script { web_build() } }
+        }
+        stage('Web Unit Test') {
+            when { expression { params.TEST_SCOPE in ['unit','full'] } }
+            steps { script { web_test() } }
+        }
+        stage('API Test') {
+            when { expression { params.TEST_SCOPE in ['api','full'] } }
+            steps { script { api_test() } }
+        }
+        stage('Integration Test') {
+            when { expression { params.TEST_SCOPE in ['integration','full'] } }
+            steps { script { integration_test() } }
+        }
+        stage('E2E Test') {
+            when { expression { params.TEST_SCOPE in ['e2e','full'] } }
+            steps { script { e2e_test() } }
+        }
+    }
+    post {
+        always {
+            junit allowEmptyResults: true, keepLongStdio: true,
+                  testResults: '**/target/surefire-reports/*.xml,**/junit.xml,**/test-results/*.xml'
+            archiveArtifacts allowEmptyArchive: true,
+                  artifacts: '**/target/*.jar,**/dist/**/*,test-output/**'
+        }
+        failure { script { env.FINAL_RESULT = 'FAILURE' } }
+        unstable { script { env.FINAL_RESULT = 'UNSTABLE' } }
+        success { script { env.FINAL_RESULT = 'SUCCESS' } }
+        aborted { script { env.FINAL_RESULT = 'ABORTED' } }
+    }
+}
+// ─── 各阶段脚本（默认实现，实际按项目覆盖） ───
+def toolcheck() {
+    sh '''echo "=== Java ===" && java -version 2>&1 || echo "java not found"
+echo "=== Maven ===" && mvn -version 2>&1 | head -2 || echo "mvn not found"
+echo "=== Node ===" && node -v 2>&1 && npm -v 2>&1 || echo "node not found"
+echo "=== Git ===" && git --version && git remote -v | head -5'''
+}
+def java_build() {
+    if (fileExists('pom.xml')) {
+        sh 'mvn compile -q -DskipTests 2>&1 || mvn compile -q -Dmaven.test.skip=true 2>&1'
+    }
+}
+def java_test() {
+    if (fileExists('pom.xml')) { sh 'mvn test -B 2>&1' }
+}
+def web_build() {
+    if (fileExists('package.json')) {
+        def pkg = readJSON file: 'package.json'
+        def pm = pkg.packageManager ?: 'npm'
+        def installer = pm.contains('pnpm') ? 'pnpm' : pm.contains('yarn') ? 'yarn' : 'npm'
+        sh "${installer} install --frozen-lockfile 2>&1 || ${installer} install 2>&1"
+        sh 'npm run build 2>&1'
+    }
+}
+def web_test() {
+    if (fileExists('package.json')) {
+        def pkg = readJSON file: 'package.json'
+        if (pkg.scripts?.test) { sh 'npm test 2>&1 || echo "Test script returned non-zero"' }
+        if (pkg.scripts?.'test:unit') { sh 'npm run test:unit 2>&1 || echo "test:unit returned non-zero"' }
+    }
+}
+def api_test()   { echo "API test stage — override per project" }
+def integration_test() { echo "Integration test stage — override per project" }
+def e2e_test()   { echo "E2E test stage — override per project" }

@@ -1,0 +1,10 @@
+{
+  "task_id": "3413",
+  "cc_connect_project": "personal",
+  "cc_connect_session": "personal_73d43c3e",
+  "claude_session_id": "",
+  "started_at": "2026-11-16T13:38+08:00",
+  "updated_at": "2026-11-16T13:38+08:00",
+  "worktrees": {},
+  "jenkins": {"last_build": null, "build_url_template": "http://10.0.0.172:3194/job/ai-test-runner/{build_number}"}
+}
