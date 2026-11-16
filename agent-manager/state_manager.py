@@ -53,9 +53,10 @@ CREATE TABLE IF NOT EXISTS execution_runs (
     finished_at       TEXT,
     result            TEXT,
     retry_count       INTEGER DEFAULT 0,
-    error_message     TEXT,
-    UNIQUE(project_key, task_id, started_at)
+    error_message     TEXT
 );
+-- 注：不加 UNIQUE(project_key, task_id, started_at)——started_at 秒级精度会同秒撞键，
+--     并发防护由 task_locks 负责，历史允许多条执行记录。
 CREATE INDEX IF NOT EXISTS idx_exec_task ON execution_runs(project_key, task_id);
 
 CREATE TABLE IF NOT EXISTS agent_runs (
@@ -141,7 +142,8 @@ class StateManager:
     # ------------------------------------------------------- execution_runs
     def create_execution(self, run: ExecutionRun) -> int:
         with self._lock:
-            cur = self._conn.execute(
+            try:
+                cur = self._conn.execute(
                 """INSERT INTO execution_runs
                    (project_key, task_id, task_level, workflow_status, current_stage,
                     started_at, updated_at, retry_count)
@@ -157,8 +159,26 @@ class StateManager:
                     run.retry_count,
                 ),
             )
-            self._conn.commit()
-            eid = int(cur.lastrowid)
+                self._conn.commit()
+                eid = int(cur.lastrowid)
+            except Exception as e:
+                # 旧库遗留 UNIQUE 约束时同秒撞键：重试一次（时间戳微秒化）
+                if "UNIQUE" in str(e):
+                    cur = self._conn.execute(
+                        """INSERT INTO execution_runs
+                           (project_key, task_id, task_level, workflow_status, current_stage,
+                            started_at, updated_at, retry_count)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (
+                            run.project_key, run.task_id, run.task_level.value,
+                            run.workflow_status.value, run.current_stage,
+                            _now() + "Z", _now(), run.retry_count,
+                        ),
+                    )
+                    self._conn.commit()
+                    eid = int(cur.lastrowid)
+                else:
+                    raise
         # 记事件放在锁外，避免嵌套持锁（双保险）
         self.log_event(eid, "execution_created", {"task_id": run.task_id})
         return eid

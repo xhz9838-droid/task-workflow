@@ -247,3 +247,13 @@ def _iso_now() -> str:
     import datetime
 
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+# --------------------------------------------------------------- CLI 入口（P11.1）
+# 统一 argparse/退出码/输出见 cli.py；此处仅转发，不重复实现业务逻辑。
+if __name__ == "__main__":
+    try:
+        from cli import runner_main
+    except ImportError:
+        from .cli import runner_main  # type: ignore
+    raise SystemExit(runner_main(sys.argv[1:]))

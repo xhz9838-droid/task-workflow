@@ -243,3 +243,12 @@ class Monitor:
                     on_warning(w)
             time.sleep(self.poll)
         return last or self.snapshot(pid=pid, started_at=started_at, last_output_at=last_output_at, stage=stage)
+
+
+# --------------------------------------------------------------- CLI 入口（P11.1）
+if __name__ == "__main__":
+    try:
+        from cli import monitor_main
+    except ImportError:
+        from .cli import monitor_main  # type: ignore
+    raise SystemExit(monitor_main(sys.argv[1:]))
