@@ -1,0 +1,162 @@
+{
+  "project_key": "jeebootx",
+  "task_id": "3413",
+  "agent": "dw-qa-engineer",
+  "task_ids": ["QA1"],
+  "status": "partial",
+  "tested_at": "2026-11-16T17:49:08+08:00",
+  "scope": {
+    "repo": "jeebootx-ui",
+    "worktree": "D:/WorkSpace/.worktrees/jeebootx-ui-zt3413",
+    "branch": "ai/zt-3413",
+    "commit_under_test": "1c302d6",
+    "mode": "read-only (未修改 worktree 任何文件)"
+  },
+  "code_verified": {
+    "AC3": {
+      "status": "pass",
+      "evidence": "静态代码审查 Batch/index.vue：「审批」按钮仅存在于 <template v-if=\"row.status === '已提交'\"> 分支（L53-L59）；「未提交」分支（L48-L52）与「已审批」分支（L60-L62）均无审批按钮。状态值 '已提交' 即 PENDING_APPROVAL 中文态，与现有 salaryBatchStatusTagType 展示口径一致。验收矩阵 AC3 允许「代码审查」作为证据。"
+    },
+    "AC10": {
+      "status": "pass",
+      "evidence": "grep 确认 L56: <el-button v-auth=\"'san_payroll_approve'\" text type=\"success\" @click.stop=\"openApprove(row)\">审批</el-button>，权限码与需求 FR1/矩阵 AC10 完全一致（san_payroll_approve，含单引号包裹）。全仓库 grep 另命中 Salary/Approve/index.vue L80 同权限码（既有页面，非本次改动）。"
+    },
+    "NF1": {
+      "status": "pass",
+      "evidence": "本次交付 commit 1c302d6 numstat 仅 1 个前端文件（src/views/sanitation/Personnel/Salary/Batch/index.vue, +105/-3）；jeebootx-sanitation 工作区无已跟踪文件改动（仅 zentao_*.txt 等无关未跟踪草稿文件）；无后端 Java 改动。"
+    },
+    "NF2": {
+      "status": "pass",
+      "evidence": "commit 1c302d6 未触及任何 migration/Flyway 脚本（diff 仅 1 个 .vue 文件），无新增 DDL。"
+    },
+    "NF3": {
+      "status": "pass",
+      "evidence": "commit 1c302d6 numstat 仅 Batch/index.vue，package.json / pnpm-lock 未改动，无新增依赖。"
+    },
+    "NF4": {
+      "status": "pass",
+      "evidence": "commit 1c302d6 不含 jeebootx-app 文件；jeebootx-app 工作区仅 .env.development 一处未提交改动（VITE_API_BASE_URL 10.0.0.44→10.0.0.172，本地联调 IP 切换，与 3413 无关，非本次交付产生）。移动端 payroll-approve 代码零改动。"
+    },
+    "NF5": {
+      "status": "pass",
+      "evidence": "复用项目既有模式：v-auth 指令、el-dialog + footer 按钮、ElMessageBox.confirm 二次确认（与 submitBatch/withdrawBatch 同构）、utils/format 格式化器、useMessage 提示。金额用 fmtMoney2（两位小数，utils/format.ts 明文『薪酬核算 Step2 专用——薪酬表金额精确到分』），未用 fmtMoney（取整）——与矩阵字面『复用 fmtMoney』有意偏差，但与移动端 fmtMoney 两位小数口径一致，取整反而丢精度；空值走 EMPTY('—')。ESLint 通过。"
+    }
+  },
+  "blocked": [
+    {
+      "id": "AC1",
+      "reason": "需真实浏览器 + 项目经理账号登录验证按钮可见性，当前无浏览器/E2E 环境",
+      "wait_for": "QA 运行环境（浏览器自动化或人工验收）+ 测试账号（项目经理，含 san_payroll_approve）",
+      "resume_steps": "登录项目经理账号 → 打开 环卫-人员档案-薪酬管理-月份批次 → 找到「已提交」批次 → 截图操作列，确认含「审批」按钮"
+    },
+    {
+      "id": "AC2",
+      "reason": "需真实浏览器 + HR 账号验证按钮不可见（v-auth 移除节点行为需运行时确认）",
+      "wait_for": "QA 运行环境 + HR 测试账号（有 san_payroll_submit、无 san_payroll_approve）",
+      "resume_steps": "登录 HR 账号 → 同一列表页 → 截图「已提交」行操作列，确认无「审批」按钮（详情/撤回审批仍在）"
+    },
+    {
+      "id": "AC4",
+      "reason": "弹框弹出、loading→数据渲染为运行时行为，需真实浏览器 + 可用后端 summary 接口",
+      "wait_for": "QA 运行环境 + 测试后端（GET /payrollBatch/{batchId}/summary 可用，存在已提交批次）",
+      "resume_steps": "项目经理登录 → 点击「已提交」行「审批」→ 截图 loading 态 → 截图数据态弹框，核对字段完整展示"
+    },
+    {
+      "id": "AC5",
+      "reason": "运行时渲染核对需真实浏览器（静态逐字段对照已完成且通过，见 cross_checks.field_alignment）",
+      "wait_for": "QA 运行环境 + 可用后端 summary 接口",
+      "resume_steps": "打开审批弹框 → 逐条对照移动端 PayrollSummaryVO 展示（月份/人数/综合工资/缺勤工资/临时加班/顶岗岗位补贴/节假日补贴/处罚/奖励/高温补贴/其他补款/合计应发/实发工资）截图比对；注意 Web 额外展示 小计/社保合计/公积金合计/个税合计 4 行（移动端 summaryRows 未展示），需业务确认是否保留"
+    },
+    {
+      "id": "AC6",
+      "reason": "审批通过全流程（确认→approve→关弹框→列表刷新→状态变已审批）需真实浏览器 + 后端 + DB",
+      "wait_for": "QA 运行环境 + 测试后端 + DB 访问（存在已提交测试批次）",
+      "resume_steps": "打开审批弹框 → 点「审批通过」→ 确认 → 截图成功提示 → 截图刷新后列表状态为「已审批」"
+    },
+    {
+      "id": "AC7",
+      "reason": "取消交互（弹框关闭、列表不变）需真实浏览器验证",
+      "wait_for": "QA 运行环境",
+      "resume_steps": "打开审批弹框 → 点「取消」→ 截图弹框关闭且列表无变化；另验证二次确认框点「取消」不发 approve 请求"
+    },
+    {
+      "id": "AC8",
+      "reason": "汇总接口异常需 Mock/断网运行时验证。另发现验收口径冲突：acceptance-matrix AC8 预期『弹框关闭+错误提示』，requirements.md 验收用例 AC8 预期『弹框展示错误提示，不展示空白汇总』；实现按 requirements 走（弹框保持打开，el-result 错误态+重试按钮）。运行时验证时需先裁定口径",
+      "wait_for": "QA 运行环境 + Mock 手段（devtools 断网/接口 mock）+ 业务裁定 matrix 与 requirements 冲突口径",
+      "resume_steps": "Mock GET summary 网络错误 → 点「审批」→ 按裁定口径截图（当前实现：弹框内 el-result 错误态+错误 toast+可重试，弹框不关闭）"
+    },
+    {
+      "id": "AC9",
+      "reason": "审批接口异常需 Mock 运行时验证（静态代码已确认失败时弹框不关闭+错误提示，符合 matrix 与 requirements 双方口径）",
+      "wait_for": "QA 运行环境 + Mock 手段",
+      "resume_steps": "Mock POST approve 网络错误 → 弹框内点「审批通过」→ 确认 → 截图：弹框保持打开 + 错误提示"
+    },
+    {
+      "id": "AC11",
+      "reason": "后端状态校验（已审批批次再次 approve 返回 400）需真实后端，纯前端无法验证",
+      "wait_for": "测试后端可用 + 已存在已审批批次",
+      "resume_steps": "curl -X POST /api/sanitation/payrollBatch/{已审批batchId}/approve（带项目经理登录 token）→ 断言 HTTP 400 及错误体"
+    },
+    {
+      "id": "AC12",
+      "reason": "approverId 写库需 DB 查询验证",
+      "wait_for": "DB 访问（sanitation_payroll_batch 表）",
+      "resume_steps": "审批通过一个测试批次后执行 SELECT approver_id, approve_time, status FROM sanitation_payroll_batch WHERE id = {batchId}，断言 approver_id = 项目经理用户 ID"
+    },
+    {
+      "id": "NF6",
+      "reason": "幂等需运行时验证：前端 approving 守卫仅防并发重复提交（静态已确认），重复审批（先后两次）的副作用拦截依赖后端状态校验（AC11），需真实后端",
+      "wait_for": "测试后端 + QA 运行环境",
+      "resume_steps": "验证两点：(1) 弹框内快速连点「审批通过」仅发 1 次 POST approve；(2) 批次已审批后再次调 approve 返回 400 且 DB 无重复审批记录（与 AC11 联测）"
+    },
+    {
+      "id": "BUILD-VERIFY",
+      "reason": "生产构建验证未闭环：跳过指令到达前已执行 1 次 npm run build，结果 fail（见 real_tests，terser/renderChunk 阶段报错，exit 1）；按用户指令未再重跑，构建链路是否稳定/是否与 W1 代码相关未裁定",
+      "wait_for": "用户/编排方决定是否恢复构建验证；如需归因需在基线 commit（c54c670）对比构建",
+      "resume_steps": "npm run build 复跑 1-2 次确认是否必现；若必现，在基线 commit 构建对比判定是否为存量工具链问题（共享 node_modules 存在 @swc/core 1.6.13 与 1.16.18 双版本，与报错 'failed to deserialize program: unknown variant BlockStatement' 特征吻合）；构建通过后方可放行发布"
+    }
+  ],
+  "real_tests": [
+    {
+      "cmd": "D:/WorkSpace/.worktrees/jeebootx-ui-zt3413/node_modules/.bin/eslint --no-fix --ext .ts,.vue src/views/sanitation/Personnel/Salary/Batch/index.vue",
+      "result": "pass",
+      "evidence": "exit code 0，无输出（0 errors, 0 warnings）"
+    },
+    {
+      "cmd": "cd D:/WorkSpace/.worktrees/jeebootx-ui-zt3413 && npm run build",
+      "result": "fail",
+      "evidence": "本条为跳过指令到达前的唯一一次真实执行（约 6m49s）：8584 modules transformed，随后 renderChunk/minify 阶段报错 exit 1：TypeError: Cannot create property 'code' on string ... Caused by: failed to deserialize program: Error: unknown variant `BlockStatement`, expected one of [表达式列表...]（swc AST 反序列化失败特征）。注意：W1 报告称 build pass（8581 modules），与本次真实输出矛盾（模块数 8584 vs 8581、exit 1 vs pass）——W1 build 结论存疑。失败发生在全量 chunk 生成/minify 阶段，Batch/index.vue 本身已通过 transform；归因未建立（未做基线对比构建），共享 node_modules 含 @swc/core 1.6.13 + 1.16.18 双版本疑为工具链存量问题，但不能排除其他因素。"
+    },
+    {
+      "cmd": "cd D:/WorkSpace/.worktrees/jeebootx-ui-zt3413 && npm run build（复验）",
+      "result": "not_run",
+      "evidence": "用户指令跳过前端构建（编排方 2026-11-16 指令：跳过 npm run build，不执行不等待）。复验未执行；依赖构建的验收项一律不标 pass，见 blocked BUILD-VERIFY。"
+    }
+  ],
+  "cross_checks": {
+    "openapi_consistency": {
+      "status": "pass",
+      "notes": "GET /sanitation/payrollBatch/{batchId}/summary 与 openapi GET /payrollBatch/{batchId}/summary 一致（/sanitation 为网关服务前缀）；POST /sanitation/payrollBatch/{batchId}/approve 与 openapi POST /payrollBatch/{batchId}/approve 一致，未传 taskId（openapi 中 required=false，符合『Web 端从批次列表直接审批时不传』）。batchId 为雪花 Long，前端 resolveBatchId 全程字符串透传并支持 month→batchId 回退，不与 int64 契约冲突。字段绑定 16 个 DTO 字段全部有据。小差异：前端 SalarySummaryVO 与弹框含 subtotal（小计），但 openapi PayrollSummaryDTO 未列 subtotal（requirements FR2 #7 与 types.ts 有）——契约文档内部不一致；前端绑定为容错展示（接口无值显示 '—'），不破坏契约，建议后续补 openapi 文档（L3 级，不阻塞）。"
+    },
+    "requirements_FR": {
+      "status": "pass_static",
+      "notes": "FR1（按钮+v-auth+已提交行）静态通过；FR2（弹框字段+loading+失败提示）静态通过：requirements 15+3 字段全部覆盖（含小计/社保/公积金/个税可选），el-descriptions 2 列 border，el-skeleton loading、el-result 失败态；FR3（确认→approve→关弹框刷新提示；失败不关弹框）静态通过；FR4（wflow 待办消除）按 requirements 兜底路径处理——未传 taskId，wflow 待办不自动消除，属文档允许的实现决定但仍是 W1 报告挂起的业务决策点。验收用例 AC1-AC8 中 1-7 需运行时（已列入 blocked），AC8 口径冲突见 blocked.AC8。"
+    },
+    "field_alignment": {
+      "status": "pass_static_runtime_blocked",
+      "notes": "对照移动端 D:/WorkSpace/jeebootx/jeebootx-app/src/packageApproval/pages/payroll-approve/index.vue summaryRows（L102-L122）逐字段核对，矩阵 13 字段全部 label+字段名一致：月份/month、人数/headcount（均带'人'后缀）、综合工资/totalSalary、缺勤工资/totalAbsent、临时加班/totalOvertime、顶岗/岗位补贴/totalSubsidy、节假日补贴/totalHoliday、处罚/totalPenalty、奖励/totalBonus、高温补贴/totalHeat、其他补款/totalOtherAdd、合计（应发）/totalPayable、实发工资/totalNet。Web 端额外 4 行：小计/subtotal（移动端 summaryRows 中该行被注释掉）、社保合计/totalSocial、公积金合计/totalFund、个税合计/totalTax（移动端不展示，requirements FR2 为『如接口返回则展示』，当前实现无条件渲染行、无值显示 '—'，与 requirements 字面略有出入但不展示假数据）。运行时渲染核对 blocked（见 AC5）。"
+    },
+    "w1_report_consistency": {
+      "status": "partial",
+      "notes": "一致项：files_changed（1 文件）、insertions/deletions（105/3，与 git show 1c302d6 --numstat 完全吻合）、commit 1c302d6、功能点描述、eslint 结论（本次复测一致）。不一致项：W1 tests 声称 npm run build pass（8581 modules transformed），本次真实执行为 fail（8584 modules，minify 阶段 exit 1）——W1 build 结论无法复现，需按 blocked BUILD-VERIFY 复跑裁定。另 W1 称『13 字段对齐』实为 13+小计+3 可选共 17 行渲染（其中小计在移动端被注释），描述略有缩水但不影响矩阵 13 字段对齐结论。"
+    }
+  },
+  "git_diff_summary": {
+    "files": 1,
+    "insertions": 105,
+    "deletions": 3,
+    "note": "来源 commit 1c302d6 --numstat：src/views/sanitation/Personnel/Salary/Batch/index.vue +105/-3。worktree 另有未提交 auto-imports.d.ts 换行符噪音（LF/CRLF，非代码改动，未计入）。"
+  },
+  "verdict": "PARTIAL",
+  "notes": "静态验收面通过：AC3、AC10 代码审查 pass，NF1-NF5 git 核验 pass，字段对齐（矩阵 13 字段逐一吻合移动端 summaryRows）与 openapi 契约一致性静态 pass，ESLint 0 错误。但 11 项需真实浏览器/后端/DB 的验收项（AC1/AC2/AC4/AC5运行时/AC6/AC7/AC8/AC9/AC11/AC12/NF6）按强制要求标 BLOCKED，不得推测为 pass；另加 BUILD-VERIFY blocked：跳过指令到达前唯一一次 npm run build 真实执行为 fail（terser/minify 阶段 swc AST 反序列化错误），已如实记录未伪造为未执行，复验按用户指令 not_run（reason: 用户指令跳过前端构建）。关键发现：(1) W1 声称 build pass 与实测 fail 矛盾，发布前必须复跑构建并归因（共享 node_modules 存在 @swc/core 1.6.13/1.16.18 双版本，疑似存量工具链问题，未排除其他可能）；(2) acceptance-matrix AC8 与 requirements AC8 错误处理口径冲突（关弹框 vs 弹框内错误态），实现取 requirements 口径，需业务裁定；(3) Web 弹框较移动端多展示 小计/社保/公积金/个税 4 行，且 subtotal 不在 openapi PayrollSummaryDTO 中（文档与 requirements/types 不一致），建议文档补齐；(4) FR4 wflow 待办消除仍挂起（未传 taskId，业务决策点，非阻塞）。结论：静态可验部分达标，整体 PARTIAL，待运行时 QA（Jenkins/浏览器）+ 构建复验后收敛。"
+}

@@ -4,7 +4,14 @@
   "cc_connect_session": "personal_73d43c3e",
   "claude_session_id": "",
   "started_at": "2026-11-16T13:38+08:00",
-  "updated_at": "2026-11-16T13:38+08:00",
+  "updated_at": "2026-11-16T17:52:30+08:00",
   "worktrees": {},
-  "jenkins": {"last_build": null, "build_url_template": "http://10.0.0.172:3194/job/ai-test-runner/{build_number}"}
+  "jenkins": {
+    "last_build": null,
+    "build_url_template": "http://10.0.0.172:3194/job/ai-test-runner/{build_number}"
+  },
+  "recovery": {
+    "last_checkpoint_at": "2026-11-16T17:52:30+08:00",
+    "resumable": true
+  }
 }

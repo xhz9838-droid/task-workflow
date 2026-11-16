@@ -1,2 +1,5 @@
 {"ts": "2026-11-16T14:08:38+08:00", "task": "3413", "action": "ccconnect.design_confirm", "detail": {"stage": "T05", "blocker": null, "rc": 0}}
 {"ts": "2026-11-16T16:06:11+08:00", "task": "3413", "action": "T06.W1.done", "detail": {"agent": "web-frontend", "commit": "1c302d6", "files": 1, "insertions": 105, "deletions": 3, "eslint": "0err", "build": "8581modules"}}
+{"ts": "2026-11-16T17:31:08+08:00", "task": "3413", "action": "workflow.recovery", "detail": {"stage": "T06-QA1", "action": "re-dispatch QA1", "rule": "continuation-protocol-3", "prev_attempt": "stopped-no-report"}}
+{"ts": "2026-11-16T17:46:38+08:00", "task": "3413", "action": "decision.L2", "detail": {"id": "D-3413-001", "decision": "skip frontend build", "scope": "QA1", "level": "L2"}}
+{"ts": "2026-11-16T17:52:30+08:00", "task": "3413", "action": "QA1.complete", "detail": {"verdict": "PARTIAL", "pass": 7, "blocked": 12, "build": "fail-then-skipped"}}

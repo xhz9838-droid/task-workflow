@@ -1,0 +1,56 @@
+# P11 Agent Execution Manager 配置
+# 初始建议值，可按项目覆盖。敏感凭据**绝不**写入本文件（走 .env）。
+
+execution:
+  max_concurrent_tasks: 1
+  task_lock_enabled: true
+  resume_enabled: true
+  task_lock_ttl_seconds: 3600
+  default_budget_seconds: 1800
+
+routing:
+  simple:
+    subagents: false        # S 级：Main Agent 直通，0 子 Agent
+    workflow: direct
+  medium:
+    workflow: selective     # M 级：按需选择性子 Agent
+  large:
+    workflow: full          # L 级：完整多 Agent 工作流
+
+monitor:
+  poll_interval_seconds: 5
+  # 注意：无可靠 Agent 心跳源时不据此判死（见 monitor.py）
+  heartbeat_timeout_seconds: 300
+  default_task_timeout_seconds: 1800
+  # 输出静默仅告警，**不**触发杀进程
+  output_idle_warning_seconds: 300
+
+retry:
+  max_attempts: 2
+  initial_delay_seconds: 30
+  max_delay_seconds: 300
+  exponential_backoff: true
+
+verification:
+  # 默认不跑 build（用户可指令跳过；S 级任务可跳）
+  run_build_by_default: false
+  aggregate_blocked_checks: true
+  require_evidence: true
+
+jenkins:
+  enabled: false            # 基础设施就绪后改为 true
+  mock: true                # 未就绪前用 Mock（不计为通过）
+  allowed_job_prefix: "ai-test-"
+  timeout_seconds: 1800
+
+notification:
+  enabled: true
+  reuse_existing_channel: true   # 复用 CC Connect，不建新机器人
+  silent_events: ["agent_thinking", "tool_call", "progress_tick"]
+
+zentao:
+  enabled: true
+  dry_run: false
+  # 禁止自动 finish/close（人工确认）
+  allow_auto_finish: false
+  allow_auto_close: false

@@ -28,3 +28,9 @@ config/users/*.yaml
 # IDE / 运行时
 .idea/
 .claude/scheduled_tasks.lock
+
+# agent-manager 运行数据（状态库/日志不入库）
+agent-manager/logs/
+agent-manager/**/*.db
+agent-manager/**/*.db-wal
+agent-manager/**/*.db-shm
