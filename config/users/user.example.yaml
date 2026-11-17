@@ -18,3 +18,10 @@ notification:
 preferences:
   language: zh-CN
   timezone: Asia/Shanghai
+
+# 本地仓库路径映射（个人机器信息，真实配置不提交公共仓库）
+# 格式：project_paths: {project_key: {repo_key: 本地绝对路径}}
+# 优先级高于项目配置的 repositories[].path；同一项目不同人员路径可不同。
+# project_paths:
+#   "${PROJECT_KEY}":
+#     "${REPO_KEY}": "${REPO_LOCAL_PATH}"

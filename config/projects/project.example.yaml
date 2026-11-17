@@ -12,6 +12,15 @@ project:
   # 无法唯一确定则询问用户，不推断。
   # zentao_project: "${ZENTAO_PROJECT_ID}"
 
+  # 推荐：结构化禅道归属（项目注册 /workflow-register-project 自动写入）。
+  # project_id 为精确匹配锚点；product_ids 仅作辅助匹配；名称不得单独作为可靠依据。
+  zentao:
+    project_id: "${ZENTAO_PROJECT_ID}"
+    product_ids: []
+  # repositories[] 可选 remote_url：注册时记录，Git 核验用（不自动改 remote）。
+  # 个人本地路径放 config/users/{user_id}.yaml 的 project_paths（不进 Git），
+  # 本文件的 path: "${ENV_VAR}" 旧式写法仍然兼容。
+
   repositories:
     - key: "${REPO_KEY}"
       path: "${REPO_PATH}"

@@ -18,9 +18,11 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 
 - `{task_id}`：纯数字，允许 `#` 前缀；`#3415` 只是任务号，**不是完整参数**
 - `{project_key}`：非数字标识，对应 `config/projects/{project_key}.yaml`
-- `project_key` 缺失时**不推断**：先经禅道任务查询验证归属
-  （`scripts/zt.py detail --task <id>` + `scripts/_args.py match-project`），
-  能唯一确定才使用；否则**询问用户**
+- `project_key` 缺失时**不推断**：经统一项目解析链确定
+  （`python -I "{WF}/scripts/zt.py" project --task <id>` 只读提取归属 →
+  `python -I "{WF}/scripts/project_resolver.py" match --task-json -`）：
+  project_id 精确 > product_id 辅助 > 显式映射 > 名称仅辅助（名称命中**须用户确认**）；
+  唯一可靠命中才使用；多候选→询问用户；无命中→提示 `/workflow-register-project`，**不创建 execution**
 
 ## 第 0 步：定位工作流根（每次启动必做）
 
@@ -54,8 +56,10 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 
 ## 启动前必检（缺任一项**明确报错**，不猜测）
 
-1. **项目配置**：`config/projects/{project_key}.yaml` 存在
-2. **项目路径**：配置中的 `repositories[].path` 实际存在且为 Git 仓库
+1. **项目解析**：`python -I "{WF}/scripts/project_resolver.py" context --project <key> --user <id>`
+   （未注册/禁用 → 提示 `/workflow-register-project`，不创建 execution）
+2. **项目路径**：`config/users/{id}.yaml → project_paths` 优先于 `repositories[].path`（`${ENV}` 展开）；
+   仓库校验经 `scripts/repo_check.py`（`blocked`/`mismatch` → 列出问题交用户处理，不自动修复）
 3. **人员配置**：`config/users/{user_id}.yaml` 存在（或 `--user` 显式指定）
 4. **工具适配器**：按项目 `integrations.*` 判断需要哪些适配器，检查 `config/adapters/*.yaml`
 5. **任务来源**：`integrations.task_source` 明确（zentao / none）
@@ -66,7 +70,9 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 ## 执行流程
 
 ```text
-1. 加载配置（workflow → adapters → project → user → .env）
+0. 定位工作流根（第 0 步）→ 解析项目（显式 project_key 或任务自动发现：
+   zt.py project → project_resolver match → context；未识别不创建 execution）
+1. 加载配置（workflow → adapters → project → user → .env；仓库路径经 project_resolver）
 2. 获取任务（task_source 适配器；无适配器则从 task-context.md / 人工输入）
 3. 需求分析（architect，读任务描述 + 项目代码 + 项目 CLAUDE.md）
 4. 技术设计（architect / database，产出 design/）

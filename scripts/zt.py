@@ -98,6 +98,46 @@ def cmd_progress(args):
     return 0 if ok else 3
 
 
+def cmd_projects(args):
+    """只读：当前用户可访问的禅道项目列表（项目注册第 1 步）。"""
+    client = _client()
+    data, _ = client._request(client.api_prefix + "/projects", method="GET", headers=client._auth_headers())
+    items = (data or {}).get("projects") or []
+    out = [{"id": it.get("id"), "name": it.get("name"), "status": it.get("status"), "type": it.get("type")}
+           for it in items]
+    print(json.dumps({"count": len(out), "projects": out}, ensure_ascii=False, indent=1))
+    return 0
+
+
+def cmd_project(args):
+    """只读：任务→项目归属信息（项目自动发现输入）。仅本人任务。"""
+    client = _client()
+    task = _load_own_task(client, args.task)
+    pid = str(task.get("project") or "").strip()
+    name = ""
+    try:
+        data, _ = client._request(client.api_prefix + "/projects", method="GET", headers=client._auth_headers())
+        for it in (data or {}).get("projects") or []:
+            if str(it.get("id")) == pid:
+                name = str(it.get("name") or "")
+                break
+    except Exception:
+        pass  # 项目名称仅辅助识别，查不到不阻断
+    products = set()
+    for v in (task.get("product"), task.get("products"), task.get("product_id")):
+        if isinstance(v, (list, tuple)):
+            products.update(str(x).strip() for x in v if x not in (None, ""))
+        elif v not in (None, ""):
+            products.add(str(v).strip())
+    out = {
+        "task_id": task.get("id"), "task_name": task.get("name"), "task_status": task.get("status"),
+        "project": pid, "projectName": name, "execution": task.get("execution"),
+        "product_ids": sorted(products), "assignee": extract_account(task.get("assignedTo")),
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=1, default=str))
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -109,6 +149,11 @@ def main():
     g.add_argument("--stage", required=True, help="阶段键，如 design / backend / jenkins-1")
     g.add_argument("--text", required=True)
     g.set_defaults(func=cmd_progress)
+    j = sub.add_parser("projects", help="只读：当前用户可访问的禅道项目列表")
+    j.set_defaults(func=cmd_projects)
+    k = sub.add_parser("project", help="只读：任务→项目归属信息")
+    k.add_argument("--task", required=True)
+    k.set_defaults(func=cmd_project)
     args = p.parse_args()
     return args.func(args)
 
