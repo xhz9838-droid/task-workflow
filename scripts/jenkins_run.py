@@ -67,7 +67,19 @@ import urllib.request
 # 基础配置
 # ============================================================
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def _resolve_root() -> str:
+    """工作流根目录（统一解析，见 _home.py）；解析失败回退脚本所在仓库。"""
+    try:
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from _home import resolve_workflow_home
+        return resolve_workflow_home()[0]
+    except Exception:
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+ROOT = _resolve_root()
 
 # 严格白名单：从 config/adapters/jenkins.yaml → jenkins.jobs 加载（项目无关）。
 # 不允许通过命令行传入白名单外的 Job；部署 Job 一律禁止自动触发。

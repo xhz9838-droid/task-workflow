@@ -30,13 +30,34 @@ try:
 except Exception:
     pass
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_DIR = os.path.join(ROOT, "config")
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from _home import resolve_workflow_home  # noqa: E402
+
 _VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+_root_cache = None
+
+
+def workflow_root() -> str:
+    """工作流根目录（统一解析，见 _home.py：env → 用户级配置 → 安装记录/开发源 → 向上探测）。"""
+    global _root_cache
+    if _root_cache is None:
+        _root_cache = resolve_workflow_home()[0]
+    return _root_cache
+
+
+def config_dir() -> str:
+    return os.path.join(workflow_root(), "config")
 
 
 class ConfigError(Exception):
     """配置缺失或非法——必须人工处理，不猜测。"""
+
+
+def _norm_path(path: str) -> str:
+    return os.path.normcase(os.path.normpath(os.path.abspath(os.path.expanduser(path))))
 
 
 # --------------------------------------------------------------- 读取
@@ -65,7 +86,7 @@ def _read_yaml(path: str):
 
 def _read_env(path: str = None) -> dict:
     """读 .env（KEY=VALUE），不覆盖已有进程环境变量。"""
-    path = path or os.path.join(ROOT, ".env")
+    path = path or os.path.join(workflow_root(), ".env")
     out = {}
     if not os.path.exists(path):
         return out
@@ -119,18 +140,29 @@ def _deep_merge(base: dict, over: dict) -> dict:
 # --------------------------------------------------------------- 加载
 def load_config(project_key: str = None, user_id: str = None, *, strict: bool = True) -> dict:
     """按顺序合并配置。strict=True 时 project_key/user_id 必须存在。"""
-    env = _read_env()
+    root = workflow_root()
+    env = _read_env(os.path.join(root, ".env"))
     env_full = dict(os.environ)
     env_full.update(env)
 
-    merged = {"_env": env, "_root": ROOT}
+    # WORKFLOW_HOME 统一以 _home.py 解析结果为准；.env 声明了不同值 → 配置冲突，明确报错
+    declared = (env.get("WORKFLOW_HOME") or "").strip()
+    if declared:
+        if _norm_path(declared) != _norm_path(root):
+            raise ConfigError(
+                "WORKFLOW_HOME 冲突：.env 声明 %s，但解析结果为 %s。\n"
+                "请修正 .env 或环境变量，避免状态目录分裂。" % (declared, root)
+            )
+    env_full["WORKFLOW_HOME"] = root
+
+    merged = {"_env": env, "_root": root}
 
     # 1) 全局
-    wf = _read_yaml(os.path.join(CONFIG_DIR, "workflow.yaml"))
+    wf = _read_yaml(os.path.join(config_dir(), "workflow.yaml"))
     merged = _deep_merge(merged, wf)
 
     # 2) 适配器
-    adapters_dir = os.path.join(CONFIG_DIR, "adapters")
+    adapters_dir = os.path.join(config_dir(), "adapters")
     if os.path.isdir(adapters_dir):
         for fn in sorted(os.listdir(adapters_dir)):
             if fn.endswith((".yaml", ".yml", ".json")):
@@ -140,7 +172,7 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
 
     # 3) 项目
     if project_key:
-        p_path = os.path.join(CONFIG_DIR, "projects", project_key + ".yaml")
+        p_path = os.path.join(config_dir(), "projects", project_key + ".yaml")
         if not os.path.exists(p_path) and not os.path.exists(re.sub(r"\.yaml$", ".json", p_path)):
             if strict:
                 raise ConfigError(
@@ -155,7 +187,7 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
 
     # 4) 人员
     if user_id:
-        u_path = os.path.join(CONFIG_DIR, "users", user_id + ".yaml")
+        u_path = os.path.join(config_dir(), "users", user_id + ".yaml")
         if not os.path.exists(u_path) and not os.path.exists(re.sub(r"\.yaml$", ".json", u_path)):
             if strict:
                 raise ConfigError(
@@ -208,12 +240,12 @@ def resolve_repo(cfg: dict, repo_key: str) -> str:
 
 def exec_root(cfg: dict, project_key: str, task_id: str) -> str:
     """任务执行状态根目录 execution/{project_key}/{task_id}。"""
-    base = get(cfg, "execution_root", os.path.join(ROOT, "execution"))
+    base = get(cfg, "execution_root", os.path.join(workflow_root(), "execution"))
     return os.path.normpath(os.path.join(base, str(project_key), str(task_id)))
 
 
 def worktree_root(cfg: dict) -> str:
-    base = get(cfg, "worktree_root", os.path.join(ROOT, "..", ".worktrees"))
+    base = get(cfg, "worktree_root", os.path.join(workflow_root(), "..", ".worktrees"))
     return os.path.normpath(base)
 
 
@@ -264,7 +296,7 @@ def main(argv):
             elif not os.path.isdir(p):
                 errs.append("仓库 %s 路径不存在：%s" % (r.get("key"), p))
         for a in enabled_agents(cfg):
-            f = os.path.join(ROOT, ".claude", "agents", a + ".md")
+            f = os.path.join(workflow_root(), ".claude", "agents", a + ".md")
             if not os.path.exists(f):
                 errs.append("启用的 Agent 缺定义：%s" % a)
         # 集成名 → 适配器配置键（integrations 的值是供应商名，适配器键是集成名）

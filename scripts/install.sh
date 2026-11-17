@@ -88,6 +88,16 @@ do_install() {
   echo "配置：把 config/*.example.yaml 复制为实际文件并填写；凭据放 .env。"
 }
 
+# 工作流根安装记录：Skill 从任意目录启动时按此定位 config/ 与 execution/（见 scripts/_home.py）
+write_install_record() {
+  local record="$USER_CLAUDE/zentao-dev-workflow.home"
+  # pwd -W：Git Bash 下写 Windows 原生路径（/d/... 形式 Windows Python 无法解析）
+  local native
+  native="$(cd "$WORKFLOW_HOME" && pwd -W 2>/dev/null)" || native="$WORKFLOW_HOME"
+  printf '%s\n' "$native" > "$record"
+  echo "  ✓ 工作流根安装记录 → $record"
+}
+
 do_uninstall() {
   echo "== 卸载 $SKILL_NAME =="
   for d in "$USER_CLAUDE/skills/$SKILL_NAME" "$USER_CLAUDE/skills/dev-workflow"; do
@@ -97,7 +107,9 @@ do_uninstall() {
     local af="$USER_CLAUDE/agents/$n.md"
     if [[ -e "$af" ]]; then rm -f "$af"; echo "  ✓ 移除 $af"; fi
   done
+  local record="$USER_CLAUDE/zentao-dev-workflow.home"
+  if [[ -e "$record" ]]; then rm -f "$record"; echo "  ✓ 移除 $record"; fi
   echo "卸载完成（用户其他 Skill/Agent 未动）。"
 }
 
-if [[ "$MODE" == "uninstall" ]]; then do_uninstall; else do_install; fi
+if [[ "$MODE" == "uninstall" ]]; then do_uninstall; else do_install; write_install_record; fi

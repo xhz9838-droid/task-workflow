@@ -7,6 +7,11 @@ project:
   root: "${PROJECT_ROOT}"
   baseline_branch: main
 
+  # 可选：禅道项目归属标识（项目 ID 或名称，可为列表）。
+  # 仅给出任务号（如 #3415）启动时，用于验证任务→项目归属；
+  # 无法唯一确定则询问用户，不推断。
+  # zentao_project: "${ZENTAO_PROJECT_ID}"
+
   repositories:
     - key: "${REPO_KEY}"
       path: "${REPO_PATH}"

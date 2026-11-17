@@ -9,12 +9,48 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 
 ```text
 /zentao-dev-workflow {project_key} {task_id}
+/zentao-dev-workflow {task_id}            # 仅任务号（如 #3415）：project_key 缺失，须归属验证
 ```
 
 也支持自然语言（"用 jeebootx 项目跑任务 3413"、"继续上次的工作流"）。
 
-`{project_key}` 对应 `config/projects/{project_key}.yaml`。
-`{task_id}` 对应任务状态目录 `execution/{project_key}/{task_id}/`。
+参数**独立解析**（`scripts/_args.py parse`）：
+
+- `{task_id}`：纯数字，允许 `#` 前缀；`#3415` 只是任务号，**不是完整参数**
+- `{project_key}`：非数字标识，对应 `config/projects/{project_key}.yaml`
+- `project_key` 缺失时**不推断**：先经禅道任务查询验证归属
+  （`scripts/zt.py detail --task <id>` + `scripts/_args.py match-project`），
+  能唯一确定才使用；否则**询问用户**
+
+## 第 0 步：定位工作流根（每次启动必做）
+
+Skill 安装目录（本 SKILL.md 所在目录）**只有 Skill 文件**，不含 `config/`、`execution/`，
+**不得**当作工作流仓库；当前业务项目目录同样**不得**当作工作流根。
+
+统一解析机制（`scripts/_home.py`，优先级命中即止）：
+
+1. 环境变量 `WORKFLOW_HOME`
+2. 用户级配置 `~/.claude/zentao-dev-workflow.json` → `workflow_home`
+3. 安装记录 `~/.claude/zentao-dev-workflow.home`（`scripts/install.sh` 写入）
+4. Skill 开发源（脚本所在仓库，须通过校验）
+5. 从当前目录向上探测（须同时含 `config/workflow.yaml` + `scripts/_config.py`）
+
+按上述顺序取得候选目录 `{WF}` 后复核：
+
+```bash
+python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根绝对路径
+```
+
+全部落空 → **明确报错**并列出已尝试来源，询问用户设置 `WORKFLOW_HOME`；**不猜测**。
+
+## 路径锚定
+
+后续所有相对路径（`config/`、`execution/`、`scripts/`）均锚定**工作流根 `{WF}`**：
+
+- `config/projects/{project_key}.yaml` = `{WF}/config/projects/{project_key}.yaml`
+- `execution/{project_key}/{task_id}/` = `{WF}/execution/{project_key}/{task_id}/`
+- 配置、执行状态、审计日志统一写 `{WF}/...`，按 `project_key/task_id` 隔离，
+  不因启动目录不同产生重复或错位的状态目录
 
 ## 启动前必检（缺任一项**明确报错**，不猜测）
 
@@ -81,9 +117,12 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 安装目标：`~/.claude/skills/zentao-dev-workflow/`
 
 ```bash
-{WORKFLOW_HOME}/scripts/install.sh          # 安装/更新 Skill + Agents 到个人级
+{WORKFLOW_HOME}/scripts/install.sh          # 安装/更新 Skill + Agents 到个人级，写入安装记录
 {WORKFLOW_HOME}/scripts/install.sh --uninstall
 ```
+
+安装会写入安装记录 `~/.claude/zentao-dev-workflow.home`（工作流仓库绝对路径），
+供第 0 步从任意目录定位工作流根。
 
 在**任意项目根目录**启动 Claude Code 后即可调用：
 ```text

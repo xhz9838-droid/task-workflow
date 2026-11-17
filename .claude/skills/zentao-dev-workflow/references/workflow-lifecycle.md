@@ -5,6 +5,8 @@
 ## 配置加载（阶段 0）
 
 **输入**：`project_key`、`task_id`
+**第 0 步**：定位工作流根 `{WF}`（`scripts/_home.py`，见 project-adaptation.md）；
+以下 `config/`、`execution/` 等相对路径均锚定 `{WF}`。
 **加载顺序**（后者覆盖前者）：
 
 1. 脚本内置默认值

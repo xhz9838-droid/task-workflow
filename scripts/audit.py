@@ -9,7 +9,20 @@ import json
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def _root() -> str:
+    """工作流根目录（统一解析，见 _home.py）；解析失败回退脚本所在仓库，审计不因定位问题丢记录。"""
+    try:
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from _home import resolve_workflow_home
+        return resolve_workflow_home()[0]
+    except Exception:
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+ROOT = _root()
 
 
 def audit(task_id, action, detail=None, project_key=None):

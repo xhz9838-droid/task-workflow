@@ -2,6 +2,40 @@
 
 > 项目配置加载、技术栈适配、无适配器运行。
 
+## 工作流根目录解析（WORKFLOW_HOME）
+
+Skill 安装目录不含 `config/`、`execution/`，业务项目目录也不是工作流根。
+所有路径以**工作流根**为锚，由 `scripts/_home.py` 统一解析（优先级命中即止）：
+
+| 优先级 | 来源 | 无效时 |
+|---|---|---|
+| 1 | 环境变量 `WORKFLOW_HOME` | **明确报错**（不静默回落） |
+| 2 | 用户级配置 `~/.claude/zentao-dev-workflow.json` → `workflow_home` | **明确报错** |
+| 3 | 安装记录 `~/.claude/zentao-dev-workflow.home`（install.sh 写入） | 跳过，继续下一级 |
+| 4 | Skill 开发源（脚本所在仓库，须通过校验） | 跳过，继续下一级 |
+| 5 | 从当前目录向上探测（须同时含 `config/workflow.yaml` + `scripts/_config.py`） | 全部落空 → 报错询问用户 |
+
+校验规则：必须同时存在 `config/workflow.yaml` 与 `scripts/_config.py`；
+Skill 安装目录（`~/.claude/skills/**`）永远不是工作流根。
+
+```bash
+python -I scripts/_home.py            # 打印解析到的工作流根
+python -I scripts/_home.py --json     # {"home": ..., "source": ...}
+python -I scripts/_home.py --check    # 校验结构
+```
+
+`.env` 中的 `WORKFLOW_HOME` 不参与解析优先级；若与解析结果不一致 → 配置冲突，明确报错。
+
+## 调用参数解析
+
+`scripts/_args.py`：`project_key` 与 `task_id` **独立解析**：
+
+- `#3415` / `3415` → 仅任务号；`project_key` 缺失，**不推断**
+- `jeebootx 3415` / `3415 jeebootx` → 两者齐备
+- `project_key` 缺失时经禅道任务查询验证归属（`zt.py detail` + `_args.py match-project`），
+  唯一命中才使用；否则询问用户。项目侧可选 `project.zentao_project`（项目 ID/名称/列表）
+  提供归属标识。
+
 ## 项目配置结构
 
 `config/projects/{project_key}.yaml`：
@@ -68,6 +102,7 @@ project:
 `scripts/_config.py`：
 
 ```python
+workflow_root() -> str                       # 工作流根（统一解析，见 _home.py）
 load_config(project_key, user_id) -> dict        # 合并后配置
 resolve_repo(cfg, repo_key) -> str               # 仓库绝对路径
 exec_root(cfg, project_key, task_id) -> str      # execution/{project}/{task}

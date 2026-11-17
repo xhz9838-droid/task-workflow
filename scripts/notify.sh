@@ -3,7 +3,10 @@
 # 用法：scripts/notify.sh <task_id> <stage> <blocker_id|-> <message-file>
 #   消息头自动带：ZenTao Task ID / Session ID / Blocker ID / 阶段。
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# 工作流根目录统一解析（见 scripts/_home.py）；解析失败回退脚本所在仓库
+ROOT="$(python -I "$SCRIPT_DIR/_home.py" 2>/dev/null)" || ROOT=""
+[ -z "$ROOT" ] && ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TASK="$1"; STAGE="$2"; BLOCKER="$3"; BODY_FILE="$4"
 PROJECT_KEY="${PROJECT_KEY:-}"
 # 任务状态：execution/{project_key}/{task_id}/session.json，回退旧扁平路径
