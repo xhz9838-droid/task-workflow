@@ -162,11 +162,13 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
     merged = _deep_merge(merged, wf)
 
     # 2) 适配器
+    # 只加载实际配置（非 .example），example 模板含 ${占位符} 供参考，不当真配置加载。
+    # 加载顺序：先实际 .yaml，同名 .example 被自然忽略（实际文件优先）。
     adapters_dir = os.path.join(config_dir(), "adapters")
     if os.path.isdir(adapters_dir):
         for fn in sorted(os.listdir(adapters_dir)):
-            if fn.endswith((".yaml", ".yml", ".json")):
-                name = re.sub(r"\.example$", "", os.path.splitext(fn)[0])
+            if fn.endswith((".yaml", ".yml", ".json")) and ".example" not in fn:
+                name = os.path.splitext(fn)[0]
                 data = _read_yaml(os.path.join(adapters_dir, fn))
                 merged = _deep_merge(merged, {name: data.get(name, data)})
 
