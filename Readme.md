@@ -168,6 +168,8 @@ task-workflow/
 │   └── adapters/
 │
 ├── scripts/
+│   ├── _home.py
+│   ├── _args.py
 │   ├── _config.py
 │   ├── zt.py
 │   ├── jenkins_run.py
@@ -480,6 +482,49 @@ HKCU Run 方案是在用户登录时启动，并不等同于系统启动时、�
 
 真实机器重启后的完整生效性仍需进一步验收。
 
+## 5.6 工作流根目录解析（任意目录启动）
+
+Skill 安装在 `~/.claude/skills/zentao-dev-workflow/`（只含 SKILL.md / references /
+templates），而 `config/` 与 `execution/` 在工作流仓库中。平台通过
+`scripts/_home.py` 统一解析工作流根目录（WORKFLOW_HOME），使工作流可从**任意
+工作目录**启动（工作流仓库、Java 后端项目、Vue 前端项目、无关目录均可）。
+
+解析优先级（命中即止）：
+
+| 优先级 | 来源 | 无效时 |
+|---|---|---|
+| 1 | 环境变量 `WORKFLOW_HOME` | 明确报错，不静默回落 |
+| 2 | 用户级配置 `~/.claude/zentao-dev-workflow.json` → `workflow_home` | 明确报错 |
+| 3 | 安装记录 `~/.claude/zentao-dev-workflow.home`（`install.sh` 写入） | 跳过，继续下一级 |
+| 4 | Skill 开发源 / 脚本所在仓库（须通过校验） | 跳过，继续下一级 |
+| 5 | 从当前目录向上探测（须同时含 `config/workflow.yaml` + `scripts/_config.py`） | 全部落空 → 报错并列出已尝试来源 |
+
+校验与防护规则：
+
+- 工作流根必须同时包含 `config/workflow.yaml` 与 `scripts/_config.py`。
+- Skill 安装目录（`~/.claude/skills/**`）永远不是工作流根。
+- 业务项目目录不会被误判为工作流根。
+- `.env` 中的 `WORKFLOW_HOME` 不参与优先级；与解析结果不一致时明确报错
+  （防止配置与状态目录分裂）。
+- 所有配置路径、执行状态 `execution/{project_key}/{task_id}/`、审计日志统一
+  锚定定位后的工作流根，不因启动目录不同产生重复或错位的状态目录。
+
+验证命令：
+
+```bash
+python -I scripts/_home.py            # 打印解析到的工作流根
+python -I scripts/_home.py --json     # 含命中来源
+python -I scripts/_home.py --check    # 校验目录结构
+```
+
+调用参数由 `scripts/_args.py` 独立解析：`{project_key}` 与 `{task_id}` 互不推断，
+`#3415` 只是任务号而非完整参数；`project_key` 缺失时经禅道任务归属验证，
+无法唯一确定则询问用户。
+
+自动化测试见 `tests/test_workflow_home.py`、`tests/test_invocation.py`、
+`tests/test_config_root.py`；实施与冒烟证据见
+`reports/WORKFLOW_HOME_TEST_REPORT.md`。
+
 ---
 
 # 第六章 人员和项目配置
@@ -633,6 +678,10 @@ claude
 ```text
 /zentao-dev-workflow {project_key} {task_id}
 ```
+
+启动目录不固定：工作流仓库、任意业务项目目录乃至无关目录均可启动，平台先
+定位工作流根目录（见 5.6），再按 `project_key` / `task_id` 加载配置与状态，
+不依赖当前目录存在 `config/`、`execution/`。
 
 例如：
 
@@ -887,6 +936,8 @@ UNIQUE(decision_id, msg_id)
 
 | 脚本 | 作用 |
 |---|---|
+| `scripts/_home.py` | 工作流根目录统一解析与校验（任意目录启动） |
+| `scripts/_args.py` | 调用参数解析与任务→项目归属匹配 |
 | `scripts/_config.py` | 统一加载配置 |
 | `scripts/zt.py` | 禅道任务查询、状态读取和授权范围内的写回 |
 | `scripts/jenkins_run.py` | Jenkins Job 检查、构建触发、轮询和结果收集 |
@@ -1116,7 +1167,8 @@ execution/hitl/ACCEPTANCE-REPORT.md
 |---|---:|
 | human_decision | 51 passed |
 | agent-manager | 20 passed |
-| 合计 | 71 passed |
+| workflow-home / args / config（任意目录启动） | 43 passed |
+| 合计 | 114 passed |
 
 两个测试模块分别在正确目录运行，避免从仓库根目录合并收集造成的 Python import 冲突。
 
@@ -1132,6 +1184,7 @@ execution/hitl/ACCEPTANCE-REPORT.md
 | 正式会话保护 | 已验证 |
 | 审计测试数据污染修复 | 已提交 |
 | 凭据入库检查 | 通过 |
+| 任意目录启动（工作流根统一解析） | 已通过（43 项测试 + 四类目录真实冒烟） |
 
 ## 12.5 项目注册与自动发现
 
@@ -1296,6 +1349,22 @@ execution/hitl/ACCEPTANCE-REPORT.md
 
 注册失败不会留下不完整配置；修正后重新执行注册计划即可。
 
+## 13.10 无法定位工作流根目录（找不到 config/execution）
+
+报错形如 `无法定位工作流根目录` 或 `工作流根目录无效` 时，按解析优先级逐项检查
+（详见 5.6）：
+
+1. 环境变量 `WORKFLOW_HOME` 是否指向有效的工作流仓库。
+2. `~/.claude/zentao-dev-workflow.json` 的 `workflow_home` 是否正确。
+3. 安装记录 `~/.claude/zentao-dev-workflow.home` 是否存在（重跑
+   `bash scripts/install.sh` 即可写入）。
+4. 当前目录及其上级是否在工作流仓库内（须同时含 `config/workflow.yaml` 与
+   `scripts/_config.py`）。
+
+注意：Skill 安装目录（`~/.claude/skills/zentao-dev-workflow/`）只有 Skill 文件，
+报错时不要把该目录当作工作流仓库。可用 `python -I scripts/_home.py --check`
+校验候选目录。
+
 ---
 
 # 第十四章 公司内部推广与运维建议
@@ -1447,6 +1516,7 @@ execution/hitl/ACCEPTANCE-REPORT.md
 | `8d11874` | 通用化工作流框架 P01–P10 完成 |
 | `f50da7e` | HITL 与 Agent Execution Manager 稳定性加固 |
 | `bbee7e3` | HITL 剩余必做项验收报告及相关修复 |
+| `0d6e8a7` | 工作流根统一解析——支持任意目录启动 |
 
 ---
 
