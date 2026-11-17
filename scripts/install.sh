@@ -14,8 +14,17 @@ set -euo pipefail
 
 WORKFLOW_HOME="$(cd "$(dirname "$0")/.." && pwd)"
 USER_CLAUDE="${USERPROFILE:-$HOME}/.claude"
-SKILL_SRC="$WORKFLOW_HOME/.claude/skills/zentao-dev-workflow"
-AGENTS_SRC="$WORKFLOW_HOME/.claude/agents"
+# 布局自适应：公司仓库用 skill/ 子目录，个人开发仓库用 .claude/skills/ 布局
+if [[ -d "$WORKFLOW_HOME/skill" ]]; then
+  SKILL_SRC="$WORKFLOW_HOME/skill"
+  AGENTS_SRC="$WORKFLOW_HOME/agents"
+elif [[ -d "$WORKFLOW_HOME/.claude/skills/zentao-dev-workflow" ]]; then
+  SKILL_SRC="$WORKFLOW_HOME/.claude/skills/zentao-dev-workflow"
+  AGENTS_SRC="$WORKFLOW_HOME/.claude/agents"
+else
+  echo "✗ 未找到 skill 源目录（尝试 $WORKFLOW_HOME/skill 与 $WORKFLOW_HOME/.claude/skills/zentao-dev-workflow）" >&2
+  exit 1
+fi
 SKILL_NAME="zentao-dev-workflow"
 TS="$(date +%Y%m%d%H%M%S)"
 

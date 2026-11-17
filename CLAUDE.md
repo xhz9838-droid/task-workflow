@@ -32,10 +32,12 @@
 
 ## 状态文件（唯一可信状态源，不以聊天记录为准）
 
+> **DAG 节点执行状态的唯一真相源 = agent-manager SQLite（`agent-manager/logs/agent_manager.db` 的 `node_dispatches` 表）**。`run-state.json` 是 `scripts/dispatch.py export-state` 从 SQLite 导出的**只读快照**，禁止主控/Skill/Subagent 直接修改。所有节点状态变更经 `dispatch.py`（register-dispatch / confirm-running / record-result / reconcile）。历史 run-state.json 经 `scripts/migrate_runstate.py` 迁入 SQLite，无凭证的 running 标 UNVERIFIED。
+
 任务状态根：`execution/{project_key}/{task_id}/`
 
 - `tasks.yaml`：任务 DAG（节点/依赖/Agent/文件所有权）
-- `run-state.json`：阶段、节点状态、重试、阻塞、检查点
+- `run-state.json`：**只读导出快照**（阶段、节点状态、执行凭证、检查点、blockers；由 export-state 生成）
 - `session.json`：Claude Session ID、集成会话 key（**不含 token**）
 - `task-context.md`：任务上下文摘要
 - `design/`、`acceptance/`、`agent-reports/`、`test-reports/`、`jenkins/`、`logs/`
@@ -81,6 +83,7 @@
 # Workflow Continuation Protocol（工作流续接协议）
 
 > 以下为**硬性规则**。违反任一条即视为工作流执行失败。
+> **状态唯一真相源 = agent-manager SQLite（`node_dispatches` 表）**。`run-state.json` 仅作 `dispatch.py export-state` 导出的只读快照。所有 DAG 节点状态变更必须经 `scripts/dispatch.py`（register-dispatch / confirm-running / record-result / reconcile / export-state），**禁止主控、Skill、Subagent 直接修改 run-state.json**。详见 `references/recovery-protocol.md` 与 `references/continuation-protocol.md`。
 
 ## 规则 1：子 Agent 完成 ≠ 工作流完成
 
@@ -95,12 +98,12 @@
 1. 读取 Agent Report
 2. 校验报告内容与证据（不采信无证据的"完成"声明）
 3. 检查代码、Commit、Worktree 实际状态
-4. 更新任务 DAG 节点状态
-5. 更新 `run-state.json`
-6. 更新 `session.json`
-7. 重新计算 DAG 可执行节点
-8. 启动所有依赖条件已满足的节点
-9. 记录本轮调度结果到 `run-state.json`
+4. `dispatch.py record-result` 写执行层结果到 SQLite（DONE/FAILED/BLOCKED/UNVERIFIED）
+5. 主控验收核验通过才标 DONE（Agent 报告存在 ≠ 节点 DONE）
+6. `dispatch.py export-state` 重建 run-state.json 只读快照
+7. `dispatch.py plan` 重新计算 DAG 可执行节点
+8. 启动所有依赖条件已满足的节点（register-dispatch → 主控调真实 Agent 工具 → confirm-running）
+9. 审计记录本轮调度（audit.py + execution_events）
 
 ## 规则 3：DAG 自动推进
 
@@ -129,13 +132,14 @@
 每次恢复时**必须**：
 
 1. 读取项目配置
-2. 读取任务状态（`run-state.json` / `tasks.yaml`）
-3. 读取最近 Agent Reports
-4. 检查 Git 与 Worktree
-5. 识别已完成 / 失败 / 阻塞 / 待执行节点
-6. 从最近可信检查点继续
+2. `dispatch.py reconcile` 对账僵尸 RUNNING / DISPATCHING 超时 / 迟到通知（**先核对 SQLite 执行凭证**）
+3. `dispatch.py status` 读取节点真实状态（SQLite，非 run-state.json）
+4. 读取最近 Agent Reports
+5. 检查 Git 与 Worktree
+6. `dispatch.py plan` 识别已完成 / 失败 / 阻塞 / 待执行节点
+7. 从最近可信检查点继续
 
-**禁止重复已验证完成的节点。**
+**禁止重复已验证完成的节点。** 历史无凭证的 running 迁移为 UNVERIFIED，不假定成功/失败。
 
 ## 规则 7：失败重试
 

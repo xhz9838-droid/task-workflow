@@ -1,44 +1,44 @@
-# 凭据与本地配置（禁止入库）
+# zentao-dev-workflow 本地敏感/运行时文件（禁止提交）
+
+# 机器级凭据
 .env
 .env.*
 !.env.example
-*.local.json
-.claude/settings.local.json
-config.json
 
-# Claude / CC Connect 会话敏感信息
-execution/**/session.local.json
-.cc-connect/
-
-# Jenkins 原始日志（可能含环境信息，只保留脱敏摘要）
-execution/**/jenkins/*.console.log
-execution/**/jenkins/raw/
-
-# 运行产物
-__pycache__/
-*.pyc
-*.log
-node_modules/
-.worktrees/
-
-# 个人实际配置不入库（只提交 example）
+# 实际项目/人员配置（各人本地从 .example 复制，不进公司仓库）
+config/projects/*.yaml
+!config/projects/*.example.yaml
 config/users/*.yaml
 !config/users/*.example.yaml
+# 本地适配器覆盖配置（各人路径/凭据）
+config/adapters/*.local.yaml
+!config/adapters/*.local.example.yaml
 
-# IDE / 运行时
-.idea/
-.claude/scheduled_tasks.lock
+# 任务执行状态（真实任务数据，不入库）
+execution/
 
-# agent-manager 运行数据（状态库/日志不入库）
+# agent-manager 运行时
 agent-manager/logs/
-agent-manager/**/*.db
-agent-manager/**/*.db-wal
-agent-manager/**/*.db-shm
+*.db
 
-# HITL 个人本地配置（userId 等个人身份，不入库）
-config/adapters/hitl.local.yaml
-config/**/hitl.local.yaml
+# Claude / CC Connect 会话敏感
+*.local.json
+session.local.json
+.cc-connect/
 
-# 禅道客户端 token 缓存（凭据类，绝不入库）
+# ZenTao token 缓存（含账号/token，绝不提交）
 .zentao_token.json
-**/.zentao_token.json
+
+# IDE / 编辑器
+.idea/
+.vscode/
+
+# Jenkins 原始日志（只留脱敏摘要）
+jenkins/*.console.log
+jenkins/raw/
+
+# Python 运行产物
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log

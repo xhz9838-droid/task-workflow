@@ -44,6 +44,65 @@ class AgentState(str, Enum):
     INTERRUPTED = "INTERRUPTED"
 
 
+class NodeState(str, Enum):
+    """DAG 节点级派发状态机（node_dispatches.status）。
+
+    流转：
+        PENDING → DISPATCHING → RUNNING → DONE
+        DISPATCHING → FAILED | UNVERIFIED（待对账）
+        RUNNING → FAILED | BLOCKED | UNVERIFIED
+        FAILED → RETRY_PENDING → DISPATCHING（新 attempt）
+        BLOCKED → DISPATCHING（阻塞解除后）
+
+    设计约束：
+        - DISPATCHING：已登记 attempt_id，但主控尚未取得 agent_id（Agent Tool）/ pid（CLI）。
+          是"准备派发"与"已运行"之间的可对账中间态——不是 RUNNING。
+        - 同一 (node_id, attempt_id) 唯一；不同 attempt 隔离，旧 attempt 迟到通知不覆盖新 attempt。
+        - UNVERIFIED 仅用于对账无法确认真实状态时（如 Agent Tool 无 pid 探活），不假定成功/失败。
+    """
+
+    PENDING = "PENDING"
+    DISPATCHING = "DISPATCHING"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+    BLOCKED = "BLOCKED"
+    RETRY_PENDING = "RETRY_PENDING"
+    UNVERIFIED = "UNVERIFIED"
+
+
+# NodeState 合法状态转换（from -> {允许的 to}）。校验在 StateManager.assert_node_transition。
+_NODE_TRANSITIONS: dict[NodeState, frozenset[NodeState]] = {
+    NodeState.PENDING: frozenset({NodeState.DISPATCHING}),
+    NodeState.DISPATCHING: frozenset({NodeState.RUNNING, NodeState.FAILED, NodeState.UNVERIFIED}),
+    NodeState.RUNNING: frozenset({NodeState.DONE, NodeState.FAILED, NodeState.BLOCKED, NodeState.UNVERIFIED}),
+    NodeState.FAILED: frozenset({NodeState.RETRY_PENDING}),
+    NodeState.RETRY_PENDING: frozenset({NodeState.DISPATCHING, NodeState.BLOCKED}),
+    NodeState.BLOCKED: frozenset({NodeState.DISPATCHING, NodeState.FAILED}),
+    NodeState.UNVERIFIED: frozenset({NodeState.DISPATCHING, NodeState.DONE, NodeState.FAILED}),
+    NodeState.DONE: frozenset(),  # 终态
+}
+
+# 非终态（可对账/可重派）。DONE 是唯一稳定终态；其余均可被新 attempt 推进。
+NODE_NON_TERMINAL = {
+    NodeState.PENDING, NodeState.DISPATCHING, NodeState.RUNNING,
+    NodeState.FAILED, NodeState.BLOCKED, NodeState.RETRY_PENDING, NodeState.UNVERIFIED,
+}
+
+
+class ExecutionBackend(str, Enum):
+    """执行后端 —— 决定执行凭证字段与探活能力，不得伪造。
+
+    CLAUDE_TOOL       : Claude Code Agent Tool。只有 agent_id（字符串）。
+                        无 pid、无进程级存活探测。RUNNING 探活只能靠 task-notification
+                        或报告落盘，否则 reconcile 标 UNVERIFIED。
+    CLI_SUBPROCESS    : Claude CLI 子进程（runner.py）。有 pid，可 pid_alive 探活。
+    """
+
+    CLAUDE_TOOL = "claude_tool"
+    CLI_SUBPROCESS = "cli_subprocess"
+
+
 class TaskState(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -252,4 +311,41 @@ class ExecutionRun:
         d = asdict(self)
         d["task_level"] = self.task_level.value
         d["workflow_status"] = self.workflow_status.value
+        return d
+
+
+@dataclass
+class NodeDispatch:
+    """DAG 节点级一次派发凭证（node_dispatches 一行）。
+
+    唯一性：(execution_id, node_id, attempt_id)。
+    同一 node 不同 attempt 各自一行，互不覆盖；迟到的旧 attempt 通知不覆盖新 attempt。
+
+    执行后端（execution_backend）决定探活能力：
+        CLAUDE_TOOL    → 只有 agent_id（字符串），无 pid、无进程探活。
+        CLI_SUBPROCESS → 有 pid，可 pid_alive 探活。
+    不得伪造：Agent Tool 未提供 pid 时 pid=None；无 task-notification 时 last_seen_at=None。
+    """
+
+    execution_id: int
+    node_id: str
+    attempt_id: str
+    agent_name: str
+    execution_backend: ExecutionBackend
+    status: NodeState = NodeState.PENDING
+    agent_id: Optional[str] = None       # CLAUDE_TOOL: Agent Tool 返回的 id；CLI: None
+    pid: Optional[int] = None            # CLI_SUBPROCESS: 进程 pid；CLAUDE_TOOL: None
+    started_at: Optional[str] = None     # confirm-running 时写入
+    dispatch_started_at: Optional[str] = None  # register-dispatch 时写入
+    finished_at: Optional[str] = None
+    last_seen_at: Optional[str] = None   # 真实心跳/通知来源；无则 None，不伪造
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: str = field(default_factory=_now)
+    updated_at: str = field(default_factory=_now)
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["execution_backend"] = self.execution_backend.value
+        d["status"] = self.status.value
         return d

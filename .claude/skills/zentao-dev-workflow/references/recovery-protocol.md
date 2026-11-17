@@ -24,7 +24,7 @@
 
 ## 可信检查点
 
-`run-state.json → checkpoints[]`，每项记录：
+`run-state.json → checkpoints[]`（由 `dispatch.py export-state` 从 SQLite 导出），每项记录：
 
 ```json
 {
@@ -36,7 +36,7 @@
 }
 ```
 
-**规则**：取最后一个 `completed_nodes` 与实际 Git 状态**一致**的检查点；不一致则以实际 Git 状态为准修正 DAG。
+**规则**：取最后一个 `completed_nodes` 与 SQLite `node_dispatches`（DONE 节点）**一致**的检查点；不一致则以 SQLite 为准修正 DAG。`run-state.json` 是只读快照，**真相在 SQLite**。
 
 ## 禁止重复已完成节点
 
@@ -46,13 +46,67 @@
 
 ## 节点状态判定
 
-| 状态 | 判定 |
-|---|---|
-| `done` | 报告 + 证据 + Git 核验全通过 |
-| `unverified` | 报告声明 done 但证据不全 → 要求补证据，**不重跑** |
-| `failed` | 报告 status=failed，或测试失败 |
-| `blocked` | L3 阻塞，或依赖缺失 |
-| `pending` | 未执行 |
+> **状态唯一真相源 = agent-manager SQLite（`node_dispatches` 表）**。`run-state.json` 仅作 `dispatch.py export-state` 导出的只读快照，不得直接修改。恢复时**先核对 SQLite 执行凭证**，再决定是否重派。
+
+### NodeState 状态机
+
+```
+PENDING → DISPATCHING → RUNNING → DONE
+DISPATCHING → FAILED | UNVERIFIED（待对账）
+RUNNING → FAILED | BLOCKED | UNVERIFIED
+FAILED → RETRY_PENDING → DISPATCHING（新 attempt）
+BLOCKED → DISPATCHING（阻塞解除后重派）
+```
+
+| 状态 | 判定 | 恢复动作 |
+|---|---|---|
+| `done` | SQLite node_dispatches.status=DONE + 报告 + 证据 + Git 核验全通过 | 不重跑 |
+| `dispatching` | 已登记 attempt_id，主控未取得 agent_id（未真正派发） | 检查是否真派发；DISPATCHING 超时（>600s 无 confirm）→ reconcile 标 UNVERIFIED |
+| `running` | agent_id 已确认（CLAUDE_TOOL）/ pid 已确认（CLI） | 见下方"僵尸 RUNNING 检测" |
+| `unverified` | 对账无法确认真实状态（无凭证 / CLAUDE_TOOL 无 pid 探活 / 历史无凭证 running 迁移） | **不假定成功/失败**，人工确认后重派新 attempt |
+| `failed` | 报告 status=failed / 测试失败 / 进程死（CLI） | 按重试策略：TRANSIENT→新 attempt，PERMANENT→交主控 |
+| `blocked` | L3 阻塞 / 依赖缺失 | 不自动推进；阻塞解除后重派新 attempt |
+| `pending` | 未派发 | 进入 plan 可执行列表 |
+
+### 执行后端区分（不得伪造）
+
+| 后端 | 凭证 | 探活能力 |
+|---|---|---|
+| `claude_tool`（Claude Code Agent Tool） | `agent_id`（字符串），无 pid | **无进程探活**；RUNNING 只能靠 task-notification 或报告落盘确认，否则 reconcile 标 UNVERIFIED |
+| `cli_subprocess`（Claude CLI 子进程） | `pid` | `pid_alive` 可探活；pid 死 → FAILED |
+
+**禁止**：对 CLAUDE_TOOL backend 伪造 pid；对任一 backend 在无凭证时标 RUNNING。
+
+### 僵尸 RUNNING 检测（reconcile）
+
+恢复时对每个 `status=RUNNING` 的最新 attempt：
+
+- `cli_subprocess` + pid 不存活 → `FAILED`（error_code=PROCESS_DEAD）
+- `claude_tool` + last_seen_at 超 1800s 无信号 → `UNVERIFIED`（error_code=RUNNING_STALE_NO_SIGNAL），**不假定成功/失败**
+- `dispatching` 超 600s 无 confirm-running → `UNVERIFIED`（error_code=DISPATCHING_TIMEOUT）
+
+### 迟到通知与 attempt 隔离
+
+- 旧 attempt（非 `latest_node_dispatch`）的迟到通知：记 `execution_events`，**不覆盖**最新 attempt 状态。
+- 重复完成通知（DONE→DONE）：非法转换，被拒（幂等，状态不变）。
+- 同 (node, attempt) 重复登记：`DuplicateExecutionError`，exit=4。
+- 重试 = 新 attempt_id（新一行 node_dispatches），旧 attempt 状态保留不变。
+
+### 恢复必做流程
+
+```text
+1. dispatch.py reconcile --project P --task-id T   # 对账僵尸/超时/迟到
+2. dispatch.py plan --project P --task-id T        # 计算可执行节点（读 SQLite）
+3. 对每个可执行节点：
+   a. dispatch.py register-dispatch --node X --agent A --backend claude_tool
+   b. 主控调用真实 Agent 工具（Python 不调）
+   c. 拿到真实 agent_id → dispatch.py confirm-running --node X --attempt <id> --agent-id <real>
+   d. Agent 返回 → dispatch.py record-result --node X --attempt <id> --status DONE|FAILED|BLOCKED
+   e. 主控核验证据（规则4）→ 推进 DAG
+4. dispatch.py export-state --project P --task-id T # 重建 run-state.json 只读快照
+```
+
+**禁止重复已完成节点**：DONE 节点不在 plan 可执行列表，不重跑。
 
 ## Worktree 漂移处理
 

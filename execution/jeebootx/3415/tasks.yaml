@@ -1,7 +1,7 @@
-# 任务 DAG 草案 — 3415【测试】打卡配置列表新增字段是否启用围栏
-# 状态：草案（dw-architect 产出，待人工设计确认 A3 后冻结）
-# 结论要点：仅 PC 前端 1 文件改动；无后端/无 DDL/无契约变更（见 design/architecture.md）
-# 若 A3 确认 FR-2（弹窗开关，BLK-3415-01），B2 范围同文件追加弹窗改造，后端仍零改动
+# 任务 DAG — 3415【测试】打卡配置列表新增字段是否启用围栏
+# 状态：已冻结（A3 人工设计确认完成 2026-11-17，见 decisions.md）
+# 结论要点：仅 PC 前端 1 文件 1 处改动（表格新增列）；无后端/无 DDL/无契约变更
+# FR-2（弹窗开关）经 BLK-3415-01 决策为不实施；AC-6/AC-7 取消
 
 project_key: "jeebootx"
 task_id: "3415"
@@ -47,28 +47,33 @@ nodes:
     acceptance:
       - "L3 项逐项决策：BLK-3415-01（弹窗是否开放围栏开关，FR-2）、BLK-3415-02（列头/展示文案）"
       - "确认后冻结本 tasks.yaml"
-    status: pending
+    status: done
+    verification_note: "2026-11-17 人工确认：BLK-3415-01=不开放弹窗开关（FR-2 取消）；BLK-3415-02=「是否启用围栏」列头 + success/info tag；decisions.md 落盘"
 
   - id: B2
     name: "前端开发（列表新增列）"
     agent: web-frontend
     depends_on: [A3]
+    worktree: "D:/WorkSpace/.worktrees/jeebootx-ui-zt3415"
+    branch: "ai/zt-3415"
     files_owned:
       - "jeebootx-ui/src/views/sanitation/Config/WorkStandard/index.vue"
     deliverables:
-      - "WorkStandard/index.vue 表格新增「是否启用围栏」列 + 列宽预算注释更新"
-      - "（条件）若 A3 确认 FR-2：弹窗围栏开关 + buildSavePayload 去硬编码 fenceRequired:'1'"
+      - "WorkStandard/index.vue 表格新增「是否启用围栏」列（el-tag success=启用/info=不启用）"
+      - "列宽预算注释更新（:29-35）"
     acceptance:
       - "构建通过、lint 通过"
-      - "展示口径：仅 fenceRequired==='0' 显示不启用，其余显示启用（对齐 SanitationClockRecordServiceImpl#isFenceRequired）"
+      - "展示口径：仅 fenceRequired==='0' 显示「不启用」（info tag），其余显示「启用」（success tag），对齐 SanitationClockRecordServiceImpl#isFenceRequired:936-955"
       - "与 openapi.yaml 一致（契约不变，不改 api/sanitation/**）"
-    status: pending
+      - "不触碰弹窗表单 / buildSavePayload（FR-2 取消，硬编码 '1' 维持现状）"
+    status: done
+    verification_note: "2026-11-17 规则4核验：commit b066409 存在；diff --stat c54c670..HEAD 仅 WorkStandard/index.vue(14+/6-)；全量 diff 复核新增列口径正确(==='0'→info不启用/其余→success启用)；列宽注释更新；未越权；lint pass；build fail 非本次引入(基线对照)→BLK-3415-B2-01(L2)"
 
   # B1 后端开发：本任务不需要（DB/实体/VO/DTO/消费逻辑均已存在，证据见 design/architecture.md §2）
 
   - id: C1
     name: "QA 验收"
-    agent: qa-engineer
+    agent: dw-qa-engineer
     depends_on: [B2]
     files_owned:
       - "acceptance/acceptance-matrix.md"
@@ -76,7 +81,7 @@ nodes:
       - "acceptance/acceptance-matrix.md 执行结果回填"
     acceptance:
       - "AC-1..AC-5 全部有真实证据；无法验证标 BLOCKED"
-      - "AC-6/AC-7 按 A3 对 FR-2 的决策执行或取消"
+      - "AC-6/AC-7 已随 FR-2 取消，不在本任务范围"
     status: pending
 
   - id: C2

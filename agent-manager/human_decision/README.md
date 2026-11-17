@@ -67,10 +67,12 @@ DEC-3413-001 A    显式绑定决策编号（多决策并行时必须）
 ### MCP 注册（Agent 侧）
 
 项目级：仓库根 `.mcp.json` 已注册（相对路径，随仓库生效）。
-用户级（cc-connect 起的 Agent 用这个）：
+用户级（cc-connect 起的 Agent 用这个）——`<WORKFLOW_HOME>` 替换为本机工作流根
+（即 zentao-dev-workflow 目录，可由 `python scripts/_home.py` 解析）：
 
 ```bash
-claude mcp add human-decision --scope user -- python D:/WorkSpace/task-workflow/agent-manager/human_decision/mcp_server.py
+WF_HOME=$(python scripts/_home.py)
+claude mcp add human-decision --scope user -- python "$WF_HOME/agent-manager/human_decision/mcp_server.py"
 ```
 
 ### 常驻服务（回复收集 + 超时提醒 + 重启对账）
@@ -81,13 +83,14 @@ python agent-manager/human_decision/cli.py daemon
 
 ### cc-connect 回复接入（可选，权威身份）
 
-`~/.cc-connect/config.toml` 追加后 `POST /api/v1/reload`（无需重启）：
+`~/.cc-connect/config.toml` 追加后 `POST /api/v1/reload`（无需重启）。
+`<WORKFLOW_HOME>` 替换为本机工作流根（`python scripts/_home.py` 解析）：
 
 ```toml
 [[hooks]]
 event = "message.received"
 type = "command"
-command = "python D:/WorkSpace/task-workflow/agent-manager/human_decision/cli.py hook"
+command = "python <WORKFLOW_HOME>/agent-manager/human_decision/cli.py hook"
 async = true
 timeout = 10
 ```

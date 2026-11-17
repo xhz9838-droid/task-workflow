@@ -3,7 +3,8 @@
 
 表结构（P11 §六）：
     execution_runs      任务级执行
-    agent_runs          子 Agent 运行
+    agent_runs          子 Agent 运行（Claude CLI subprocess 级）
+    node_dispatches     DAG 节点级派发凭证（Agent Tool agent_id / CLI pid 统一记录）
     execution_events    事件流（审计/恢复）
     verification_results 验证结果
     task_locks          任务级锁（防重复启动）
@@ -14,6 +15,11 @@
     - 同一 task_id 只能有一个有效运行实例（任务锁 + 过期检查）
     - 恢复时核对 PID + 启动时间 + 工作目录，避免 PID 重用误判
     - 防并发写（SQLite 事务 + WAL）
+    - **DAG 节点状态唯一真相源**：node_dispatches 记录每个 (node_id, attempt) 的
+      状态机与执行凭证；run-state.json 由 dispatch.py export-state 从此导出。
+    - **执行后端区分**：execution_backend ∈ {claude_tool, cli_subprocess}。
+      claude_tool 只有 agent_id（无 pid、无存活探测能力），cli_subprocess 有 pid。
+      reconcile 对 claude_tool 的 RUNNING 无法 pid 探活 → UNVERIFIED，不伪造。
 """
 from __future__ import annotations
 
@@ -31,9 +37,19 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 try:
-    from .models import AgentRun, AgentState, ExecutionRun, TaskState, VerifyCheck, VerifyStatus
+    from .models import (
+        AgentRun, AgentState, ExecutionRun, NodeDispatch, NodeState,
+        ExecutionBackend, TaskState, VerifyCheck, VerifyStatus,
+        _NODE_TRANSITIONS, NODE_NON_TERMINAL,
+    )
+    from .exceptions import DuplicateExecutionError
 except ImportError:
-    from models import AgentRun, AgentState, ExecutionRun, TaskState, VerifyCheck, VerifyStatus  # type: ignore
+    from models import (  # type: ignore
+        AgentRun, AgentState, ExecutionRun, NodeDispatch, NodeState,
+        ExecutionBackend, TaskState, VerifyCheck, VerifyStatus,
+        _NODE_TRANSITIONS, NODE_NON_TERMINAL,
+    )
+    from exceptions import DuplicateExecutionError  # type: ignore
 
 DEFAULT_DB = os.path.join(_HERE, "logs", "agent_manager.db")
 _LOCK_TTL_SECONDS = 3600  # 任务锁过期时间
@@ -116,6 +132,35 @@ CREATE TABLE IF NOT EXISTS pending_writes (
     attempts     INTEGER DEFAULT 0,
     last_error   TEXT
 );
+
+-- DAG 节点级派发凭证：DAG 节点状态机的唯一真相源（run-state.json 由 export-state 从此导出）
+-- 同一 (node_id, attempt_id) 唯一；不同 attempt 隔离，旧 attempt 迟到通知不覆盖新 attempt。
+CREATE TABLE IF NOT EXISTS node_dispatches (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id        INTEGER NOT NULL,
+    node_id             TEXT NOT NULL,
+    attempt_id          TEXT NOT NULL,
+    agent_name          TEXT NOT NULL,
+    execution_backend   TEXT NOT NULL,   -- claude_tool | cli_subprocess
+    status              TEXT NOT NULL,   -- NodeState
+    agent_id            TEXT,            -- CLAUDE_TOOL 返回的 id；CLI 为 NULL
+    pid                 INTEGER,         -- CLI_SUBPROCESS pid；CLAUDE_TOOL 为 NULL
+    started_at          TEXT,
+    dispatch_started_at TEXT,
+    finished_at         TEXT,
+    last_seen_at        TEXT,
+    error_code          TEXT,
+    error_message       TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY(execution_id) REFERENCES execution_runs(id)
+);
+-- 唯一约束：(execution_id, node_id, attempt_id) 全局唯一，防重复登记同一 attempt
+CREATE UNIQUE INDEX IF NOT EXISTS ux_node_dispatch ON node_dispatches(execution_id, node_id, attempt_id);
+-- 节点最新 attempt 查询：按 (execution_id, node_id) 取 id 最大（最近登记）的一行
+CREATE INDEX IF NOT EXISTS idx_node_dispatch_node ON node_dispatches(execution_id, node_id, id);
+-- 对账：未终结 + DISPATCHING/RUNNING 的节点
+CREATE INDEX IF NOT EXISTS idx_node_dispatch_status ON node_dispatches(execution_id, status);
 """
 
 
@@ -448,3 +493,210 @@ class StateManager:
                 (error[:500], write_id),
             )
             self._conn.commit()
+
+    # ------------------------------------------------------- node_dispatches
+    def register_node_dispatch(self, nd: NodeDispatch) -> int:
+        """登记一次 DAG 节点派发（DISPATCHING + attempt_id）。
+
+        事务原子写入：插入一行 node_dispatches，status=DISPATCHING，
+        dispatch_started_at=now。同 (execution_id, node_id, attempt_id) 已存在
+        → 抛 DuplicateExecutionError（防同一 attempt 重复登记）。
+
+        不在此取得 agent_id/pid——那是主控调 Agent Tool 之后 confirm-running 的事。
+        DISPATCHING 是"已登记准备派发"，不是"已运行"。
+        """
+        now = _now()
+        with self._lock:
+            try:
+                cur = self._conn.execute(
+                    """INSERT INTO node_dispatches
+                       (execution_id, node_id, attempt_id, agent_name, execution_backend,
+                        status, dispatch_started_at, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (
+                        nd.execution_id, nd.node_id, nd.attempt_id, nd.agent_name,
+                        nd.execution_backend.value,
+                        NodeState.DISPATCHING.value, now, now, now,
+                    ),
+                )
+                self._conn.commit()
+                nid = int(cur.lastrowid)
+            except sqlite3.IntegrityError as e:
+                raise DuplicateExecutionError(
+                    "节点 %s attempt %s 已登记，禁止重复派发（用新 attempt_id 重试）"
+                    % (nd.node_id, nd.attempt_id)
+                ) from e
+        self.log_event(nd.execution_id, "node_dispatch_registered", {
+            "node_id": nd.node_id, "attempt_id": nd.attempt_id,
+            "agent_name": nd.agent_name, "backend": nd.execution_backend.value,
+        })
+        return nid
+
+    def get_node_dispatch(self, execution_id: int, node_id: str, attempt_id: str) -> Optional[dict]:
+        """精确取某 attempt 凭证。"""
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT * FROM node_dispatches
+                   WHERE execution_id=? AND node_id=? AND attempt_id=?""",
+                (execution_id, node_id, attempt_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def latest_node_dispatch(self, execution_id: int, node_id: str) -> Optional[dict]:
+        """取节点最新 attempt（id 最大=最近登记）。用于查节点当前态。"""
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT * FROM node_dispatches
+                   WHERE execution_id=? AND node_id=?
+                   ORDER BY id DESC LIMIT 1""",
+                (execution_id, node_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_node_dispatches(self, execution_id: int) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT * FROM node_dispatches WHERE execution_id=?
+                   ORDER BY node_id, id""",
+                (execution_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    @staticmethod
+    def assert_node_transition(from_state: NodeState, to_state: NodeState) -> None:
+        """校验 NodeState 转换合法性。非法转换抛 ValueError（不静默写错态）。"""
+        allowed = _NODE_TRANSITIONS.get(from_state, frozenset())
+        if to_state not in allowed:
+            raise ValueError(
+                "非法节点状态转换: %s → %s（允许: %s）"
+                % (from_state.value, to_state.value, ", ".join(sorted(s.value for s in allowed)))
+            )
+
+    def update_node_dispatch(
+        self, execution_id: int, node_id: str, attempt_id: str, **fields: Any
+    ) -> dict:
+        """更新某 attempt 凭证字段并校验状态转换。
+
+        事务：读旧 status → assert_node_transition → 写新字段 + updated_at。
+        旧 attempt（非最新）的迟到通知：写入记事件但不改"最新 attempt"语义——
+        调用方应传具体 attempt_id，reconcile 据此判定是否迟到。
+        """
+        allowed = {
+            "status", "agent_id", "pid", "started_at", "finished_at",
+            "last_seen_at", "error_code", "error_message",
+        }
+        sets, vals = [], []
+        new_status = None
+        for k, v in fields.items():
+            if k not in allowed:
+                continue
+            if k == "status":
+                new_status = v
+                v = getattr(v, "value", v)
+            sets.append(f"{k} = ?")
+            vals.append(v)
+        if not sets:
+            raise ValueError("无有效字段更新 node_dispatch")
+        sets.append("updated_at = ?")
+        vals.append(_now())
+        vals.extend([execution_id, node_id, attempt_id])
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status FROM node_dispatches WHERE execution_id=? AND node_id=? AND attempt_id=?",
+                (execution_id, node_id, attempt_id),
+            ).fetchone()
+            if not row:
+                raise KeyError(
+                    "node_dispatch 不存在: exec=%s node=%s attempt=%s" % (execution_id, node_id, attempt_id)
+                )
+            old_status = NodeState(row["status"])
+            if new_status is not None:
+                self.assert_node_transition(old_status, new_status)
+            self._conn.execute(
+                f"""UPDATE node_dispatches SET {', '.join(sets)}
+                    WHERE execution_id=? AND node_id=? AND attempt_id=?""",
+                vals,
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM node_dispatches WHERE execution_id=? AND node_id=? AND attempt_id=?",
+                (execution_id, node_id, attempt_id),
+            ).fetchone()
+            updated = dict(row)
+        self.log_event(execution_id, "node_dispatch_updated", {
+            "node_id": node_id, "attempt_id": attempt_id,
+            "from": old_status.value, "to": (new_status.value if new_status else old_status.value),
+        })
+        return updated
+
+    def confirm_node_running(
+        self, execution_id: int, node_id: str, attempt_id: str,
+        *, agent_id: Optional[str] = None, pid: Optional[int] = None,
+    ) -> dict:
+        """主控取得真实 agent_id（Agent Tool）/ pid（CLI）后确认 RUNNING。
+
+        DISPATCHING → RUNNING。agent_id/pid 二选一按 backend：
+          CLAUDE_TOOL    → agent_id 必填，pid=None
+          CLI_SUBPROCESS → pid 必填，agent_id=None
+        不得伪造：backend=claude_tool 时不接受 pid。
+        """
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT execution_backend FROM node_dispatches
+                   WHERE execution_id=? AND node_id=? AND attempt_id=?""",
+                (execution_id, node_id, attempt_id),
+            ).fetchone()
+            if not row:
+                raise KeyError("node_dispatch 不存在: %s/%s/%s" % (execution_id, node_id, attempt_id))
+            backend = ExecutionBackend(row["execution_backend"])
+        if backend == ExecutionBackend.CLAUDE_TOOL:
+            if not agent_id:
+                raise ValueError("CLAUDE_TOOL backend 必须提供 agent_id（不伪造 pid）")
+            pid = None  # Agent Tool 无 pid，强制 None
+        else:
+            if not pid:
+                raise ValueError("CLI_SUBPROCESS backend 必须提供 pid")
+            agent_id = None
+        now = _now()
+        return self.update_node_dispatch(
+            execution_id, node_id, attempt_id,
+            status=NodeState.RUNNING, agent_id=agent_id, pid=pid,
+            started_at=now, last_seen_at=now,
+        )
+
+    def record_node_result(
+        self, execution_id: int, node_id: str, attempt_id: str,
+        *, status: NodeState, error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> dict:
+        """记录节点终态/失败：RUNNING→DONE/FAILED/BLOCKED，或 DISPATCHING→FAILED。
+
+        Agent 报告存在 ≠ 节点自动 DONE——DONE 仍需主控验收规则（continuation-protocol 规则4）。
+        本方法只记录执行层结果；验收层由 verifier + 主控决定是否推进 DAG。
+        """
+        now = _now()
+        return self.update_node_dispatch(
+            execution_id, node_id, attempt_id,
+            status=status, finished_at=now,
+            error_code=error_code, error_message=(error_message[:500] if error_message else None),
+        )
+
+    def is_latest_attempt(self, execution_id: int, node_id: str, attempt_id: str) -> bool:
+        """该 attempt 是否为节点最新 attempt。用于迟到通知判定。"""
+        latest = self.latest_node_dispatch(execution_id, node_id)
+        return bool(latest and latest["attempt_id"] == attempt_id)
+
+    def list_open_node_dispatches(self, execution_id: int) -> list[dict]:
+        """所有未到 DONE 的节点最新 attempt（reconcile 用）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT nd.* FROM node_dispatches nd
+                   INNER JOIN (
+                       SELECT node_id, MAX(id) AS max_id
+                       FROM node_dispatches WHERE execution_id=?
+                       GROUP BY node_id
+                   ) m ON nd.node_id = m.node_id AND nd.id = m.max_id
+                   WHERE nd.execution_id=? AND nd.status != ?""",
+                (execution_id, execution_id, NodeState.DONE.value),
+            ).fetchall()
+        return [dict(r) for r in rows]

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""HITL daemon 监督进程（零管理员自启方案）。
+r"""HITL daemon 监督进程（零管理员自启方案）。
 
 职责：
     - 单实例保护（本进程锁：hitl-supervisor.lock）
@@ -7,9 +7,14 @@
     - 退出码 2（已有 daemon 实例）→ 等待后重试，不重复拉起
     - 运行日志：logs/hitl-supervisor.log（事件级）+ daemon 输出重定向 hitl-daemon.out.log
 
-自启方式：HKCU Run 键（当前用户登录自启，无需管理员）：
+自启方式：HKCU Run 键（当前用户登录自启，无需管理员）。
+注册表命令中的路径必须指向 daemon_supervisor.py 的实际位置——以下命令中的
+<WORKFLOW_HOME> 需替换为本机工作流根（即 _ROOT，见下方 os.path 推导；或设环境变量
+WORKFLOW_HOME）：
+
     reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
-        /v hitl-daemon /t REG_SZ /d "pythonw.exe D:\WorkSpace\task-workflow\agent-manager\human_decision\daemon_supervisor.py" /f
+        /v hitl-daemon /t REG_SZ ^
+        /d "pythonw.exe <WORKFLOW_HOME>\agent-manager\human_decision\daemon_supervisor.py" /f
 
 注：Windows 计划任务需提升权限（本机 UAC 拒绝非提升注册），故用 Run 键 + 本监督进程
 实现同等能力：开机自启 / 崩溃自愈 / 单实例 / 日志 / 与终端无关。
@@ -24,7 +29,7 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)  # agent-manager/
-_ROOT = os.path.dirname(_PARENT)  # task-workflow/
+_ROOT = os.path.dirname(_PARENT)  # 工作流根（公司仓库=zentao-dev-workflow/，个人开发=task-workflow/）
 _LOG_DIR = os.path.join(_PARENT, "logs")
 _SUPERVISOR_LOG = os.path.join(_LOG_DIR, "hitl-supervisor.log")
 _DAEMON_OUT = os.path.join(_LOG_DIR, "hitl-daemon.out.log")

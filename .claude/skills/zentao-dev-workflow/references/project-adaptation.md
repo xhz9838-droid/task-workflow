@@ -90,7 +90,7 @@ project:
 
 ```yaml
 project:
-  root: "${JEEBOOTX_ROOT}"     # .env 定义 JEEBOOTX_ROOT=D:/WorkSpace/jeebootx
+  root: "${PROJECTKEY_ROOT}"     # .env 定义 PROJECTKEY_ROOT=<本机项目路径>
 ```
 
 **规则**：
