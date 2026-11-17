@@ -55,6 +55,26 @@ def default_claude_cmd() -> str:
     return "claude"
 
 
+def default_claude_flags() -> list[str]:
+    """无头启动的受控参数（docs/execution/integration-plan.md 约定形态）。
+
+    - --verbose：`--output-format stream-json` 的硬性要求，缺则 CLI 直接报错退出
+    - --permission-mode acceptEdits + 最小 allowedTools：无头运行不卡在授权提示，
+      且不放开 Bash 等任意执行面
+    可用环境变量 CLAUDE_RUNNER_FLAGS 覆盖（空格分隔，引号内为完整参数值），
+    例如真实开发任务需要更宽工具白名单时。
+    """
+    raw = os.environ.get("CLAUDE_RUNNER_FLAGS", "").strip()
+    if raw:
+        import shlex
+
+        return shlex.split(raw)
+    return [
+        "--permission-mode", "acceptEdits",
+        "--allowedTools", "mcp__human-decision",
+    ]
+
+
 class AgentRunner:
     """子 Agent 进程管理。一个 task_id 同时只允许一个有效实例。"""
 
@@ -91,7 +111,10 @@ class AgentRunner:
                 f" 用 --resume 恢复，或等待其结束后重试。"
             )
 
-        cmd = [self.claude_cmd, "-p", prompt, "--output-format", "stream-json"]
+        # prompt 经 stdin 传入：argv 传多行 prompt 会被 Windows cmd.exe（.cmd 垫片）
+        # 按换行截断，实测 agent 只收到第一行甚至无输出（真实缺陷，2026-11-17 验收发现）。
+        cmd = [self.claude_cmd, "-p", "--output-format", "stream-json", "--verbose"]
+        cmd += default_claude_flags()
         if session_id:
             cmd += ["--resume", session_id]
         if extra_args:
@@ -104,7 +127,7 @@ class AgentRunner:
             execution_id=execution_id,
             agent_name=agent_name,
             status=AgentState.STARTING,
-            cmd=" ".join(cmd[:3]) + " …(prompt 已省略，避免日志膨胀)",
+            cmd=" ".join(cmd[:4]) + " …(prompt 经 stdin 传入)",
             workdir=workdir,
         )
         self._agent_run_id = self.state.create_agent_run(run)
@@ -116,6 +139,7 @@ class AgentRunner:
             self._proc = subprocess.Popen(
                 cmd,
                 cwd=workdir,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -124,6 +148,9 @@ class AgentRunner:
                 env=env,
                 creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW if IS_WINDOWS else 0,
             )
+            if self._proc.stdin:
+                self._proc.stdin.write(prompt)
+                self._proc.stdin.close()
         except OSError as e:
             run.status = AgentState.FAILED
             run.error_message = f"启动失败: {e}"

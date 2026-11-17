@@ -31,10 +31,69 @@ from human_decision.decision_manager import DecisionManager  # noqa: E402
 _manager: DecisionManager | None = None
 
 
+def load_state_manager():
+    """导入 agent-manager/state_manager，消解同名 `models` 歧义。
+
+    state_manager 以裸模块名 `models` 引用 agent-manager/models.py，
+    与 human_decision/models.py 同名；当 human_decision 目录排在 sys.path
+    前面时会解析错模块（实测 ImportError → 桥接静默失效）。
+    这里以显式文件位置加载 agent-manager/models.py 并注册为 `models`，
+    再导入 state_manager。human_decision 包内均为
+    `human_decision.models` 限定导入，不受影响。
+    """
+    if "state_manager" in sys.modules:
+        return sys.modules["state_manager"]
+    import importlib
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "models", os.path.join(_PARENT, "models.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["models"] = mod
+    spec.loader.exec_module(mod)
+    return importlib.import_module("state_manager")
+
+
+def install_task_state_hook(mgr: DecisionManager, db_path: str | None = None) -> None:
+    """T06 生产接线：决策生命周期 → agent-manager 任务状态桥（task_state_hook）。
+
+    - 决策创建/进入等待 → 任务 WAITING_HUMAN
+    - 决策闭环（complete）→ 任务 RUNNING（继续执行）
+    - 无对应执行记录（独立测试任务、无 agent-manager 驱动）时静默跳过
+    - 异常绝不影响决策主流程
+    """
+
+    def hook(*, task_id: str, state: str, decision_id: str = "") -> None:
+        try:
+            state_manager = load_state_manager()
+
+            sm = state_manager.StateManager(db_path)
+            try:
+                live = ("RUNNING", "WAITING_HUMAN")
+                rec = next(
+                    (e for e in sm.list_executions()
+                     if str(e.get("task_id")) == str(task_id)
+                     and str(e.get("workflow_status")) in live),
+                    None,
+                )
+                if rec is None:
+                    return
+                sm.update_execution(rec["id"], workflow_status=state)
+                sm.log_event(rec["id"], "hitl_task_state",
+                             {"state": state, "decision_id": decision_id})
+            finally:
+                sm.close()
+        except Exception:
+            pass
+
+    mgr.task_state_hook = hook
+
+
 def get_manager() -> DecisionManager:
     global _manager
     if _manager is None:
         _manager = DecisionManager()
+        install_task_state_hook(_manager)
     return _manager
 
 

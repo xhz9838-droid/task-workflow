@@ -47,7 +47,8 @@ def configure_stdout() -> None:
 
 
 def log(msg: str) -> None:
-    print(msg)
+    # flush=True：runner 输出泵线程的日志行否则会在进程退出时丢失（实测）
+    print(msg, flush=True)
 
 
 def warn(msg: str) -> None:

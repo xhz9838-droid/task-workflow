@@ -105,5 +105,9 @@ def detect(
 #   A 说明            选项 + 意见
 #   C 自定义意见      未定义选项视为「自定义意见」
 #   STOP / 停止 / 暂停
-DEC_ID_RE = re.compile(r"\b(DEC-[A-Za-z0-9]+-\w+)\b", re.IGNORECASE)
+# 决策编号 = DEC-<task_id>-<序号>；task_id 可含多段连字符（如 HITL-A02-5A）。
+# 旧式 DEC-[A-Za-z0-9]+-\w+ 会把 DEC-HITL-A02-3-13484101 截断成 DEC-HITL-A02
+# （显式绑定失效，2026-11-17 验收发现），故允许 DEC- 后任意多段；
+# DEC- 形状但不存在的编号仍按「未找到决策」回执（而非「无法识别」）。
+DEC_ID_RE = re.compile(r"\b(DEC-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+)\b", re.IGNORECASE)
 STOP_WORDS = {"stop", "停止", "暂停", "终止", "abort"}
