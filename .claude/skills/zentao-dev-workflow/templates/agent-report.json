@@ -14,9 +14,16 @@
 
   "tests": [
     {
+      "id": "AC1-T1",
+      "kind": "real_api|e2e|unit|integration|mock|lint|build|review",
       "cmd": "npm run build",
-      "result": "pass|fail|not_run|blocked",
-      "evidence": "真实输出摘要或 BLOCKED 原因"
+      "request": {"method": "GET", "url": "http://...", "body_summary": ""},
+      "response": {"status": 200, "body_summary": ""},
+      "assertion": "期望 vs 实际",
+      "result": "pass|fail|not_run|blocked|skipped",
+      "evidence": "真实输出摘要或 BLOCKED 原因",
+      "wait_for": "",
+      "resume_steps": ""
     }
   ],
 
@@ -39,6 +46,10 @@
   "cross_checks": {
     "openapi_consistency": {"status": "pass|fail|not_run", "notes": ""},
     "requirements_FR": {"status": "pass|fail|not_run", "notes": ""}
+  },
+
+  "code_verified": {
+    "AC1": {"status": "pass|fail", "evidence": "代码审查结论（仅辅助证据，不得代替 tests 真实结果）"}
   },
 
   "blockers": [
