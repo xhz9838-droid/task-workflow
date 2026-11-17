@@ -53,9 +53,10 @@ class FakeNotifier:
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    """测试不继承 cc-connect 会话环境。"""
+    """测试不继承 cc-connect 会话环境，也不写真实审计/execution 树。"""
     for var in ("CC_PROJECT", "CC_SESSION_KEY", "CC_MGMT_TOKEN"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HITL_NO_AUDIT", "1")
     from human_decision import reply_handler as rh
 
     rh.ReplyHandler._seen_cache = set()

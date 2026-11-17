@@ -32,14 +32,21 @@ from human_decision.reply_handler import ReplyHandler  # noqa: E402
 from human_decision.session_resumer import SessionResumer  # noqa: E402
 from human_decision import recovery_handler, timeout_handler  # noqa: E402
 
-# 复用 P11 审计（execution/{project}/{task}/audit.jsonl），失败不影响主流程
+# 复用 P11 审计（execution/{project}/{task}/audit.jsonl），失败不影响主流程；
+# 测试环境（HITL_NO_AUDIT=1 / pytest）不写真实 execution/ 树。
 _SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(_HERE)), "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
-try:
-    from audit import audit as _audit  # type: ignore
-except Exception:  # pragma: no cover
-    def _audit(task_id, action, detail=None, project_key=None):
+
+
+def _audit(task_id, action, detail=None, project_key=None):
+    if os.environ.get("HITL_NO_AUDIT") or os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+    try:
+        from audit import audit as _real_audit  # type: ignore
+
+        return _real_audit(task_id, action, detail, project_key=project_key)
+    except Exception:
         return None
 
 
