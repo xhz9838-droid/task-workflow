@@ -481,6 +481,11 @@ def cmd_trigger(args):
 
     result = _post_form(path, params, headers)
 
+    # 无参数 Job（如 jeebootx-ui）不接受 buildWithParameters（400 "is not parameterized"）→ 回退 /build
+    if "error" in result and "not parameterized" in str(result.get("body", "")):
+        print(f"ℹ️ [{args.job}] 为无参数 Job，回退 /build 触发（忽略构建参数）")
+        result = _post_form(f"{_job_path(args.job)}/build", {}, headers)
+
     if "error" in result:
         print(
             f"❌ Jenkins 构建触发失败：HTTP {result['error']} "
