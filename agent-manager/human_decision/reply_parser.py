@@ -52,7 +52,13 @@ def parse_reply(text: str, option_ids: Iterable[str] = ()) -> ParsedReply:
                 decision_id, ReplyKind.OPTION, choice=head_up,
                 comment=tail.strip() or None, raw_text=text.strip(),
             )
-        # 单字母但不是任何方案 → 无效选项
+        # 单字母不是方案，但带了意见文字 → 自定义意见（约定 "C + 自定义意见"）
+        if tail.strip():
+            return ParsedReply(
+                decision_id, ReplyKind.CUSTOM, choice=head_up,
+                comment=tail.strip(), raw_text=text.strip(),
+            )
+        # 孤立单字母且不是任何方案 → 无效选项（疑似敲错/未完成）
         return ParsedReply(decision_id, ReplyKind.OPTION, choice=head_up, valid=False,
                            invalid_reason=f"无效选项：{head_up}（可选：{sorted(ids)}）",
                            raw_text=text.strip())
@@ -63,7 +69,15 @@ def parse_reply(text: str, option_ids: Iterable[str] = ()) -> ParsedReply:
             comment=tail.strip() or None, raw_text=text.strip(),
         )
 
-    # 4. 其他文本 → 自定义意见
+    # 4. 其他文本：
+    #    有方案选项时，裸文本视为无效（防"收到/你好"等客套话被误当决策），
+    #    要求按约定回复；无方案选项时，整条文本即决策意见。
+    if ids:
+        return ParsedReply(
+            decision_id, ReplyKind.CUSTOM, valid=False,
+            invalid_reason="请按约定回复：选项字母（如 A）、C + 自定义意见、STOP 或 <决策编号> <回复>",
+            raw_text=text.strip(),
+        )
     return ParsedReply(
         decision_id, ReplyKind.CUSTOM, choice="C", comment=raw,
         raw_text=text.strip(),

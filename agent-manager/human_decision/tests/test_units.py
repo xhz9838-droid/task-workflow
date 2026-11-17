@@ -74,8 +74,22 @@ def test_parse_stop():
 
 
 def test_parse_custom_opinion():
-    p = parse_reply("按你们原来的做法处理", ["A", "B"])
+    # 无方案选项：裸文本 = 自定义意见
+    p = parse_reply("按你们原来的做法处理", [])
     assert p.valid and p.kind == ReplyKind.CUSTOM and p.comment == "按你们原来的做法处理"
+
+
+def test_parse_custom_via_c_with_options():
+    # 有方案选项：约定 "C + 自定义意见"
+    p = parse_reply("C 按你们原来的做法处理", ["A", "B"])
+    assert p.valid and p.kind == ReplyKind.CUSTOM and p.choice == "C"
+    assert p.comment == "按你们原来的做法处理"
+
+
+def test_parse_bare_text_invalid_when_options():
+    # 有方案选项时裸文本（如"收到"）不得被当作决策
+    p = parse_reply("收到", ["A", "B"])
+    assert not p.valid and "请按约定回复" in p.invalid_reason
 
 
 def test_parse_invalid_letter():
