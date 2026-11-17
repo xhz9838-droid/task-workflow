@@ -6,6 +6,8 @@ jenkins:
   jobs:
     - "ct-jeebootx-sanitation"
     - "jeebootx-ui"
+  # 部署类 Job：一律禁止自动触发（release_run.py 强制拦截，须 HITL P0 决策编号显式授权）
+  deploy_jobs: []
   param_names:
     repo_url: "REPO_URL"
     branch: "GIT_BRANCH"

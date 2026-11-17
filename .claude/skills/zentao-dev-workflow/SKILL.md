@@ -77,15 +77,17 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 3. 需求分析（architect，读任务描述 + 项目代码 + 项目 CLAUDE.md）
 4. 技术设计（architect / database，产出 design/）
 5. 人工设计确认（通知渠道；未确认不进编码）
-6. 生成任务 DAG（tasks.yaml）
-7. Agent 调度（按 projects/{key}.yaml → agents{} 过滤启用项）
+6. 生成任务 DAG（tasks.yaml）+ migrate_runstate.py（历史 run-state 迁入 SQLite）
+7. Agent 调度（dispatch.py plan/register-dispatch/confirm-running；按 agents{} 过滤启用项）
 8. 开发 + 测试（各 Agent 在 worktree 内，遵守文件所有权）
 9. CI 构建（jenkins 适配器，仅白名单 Job）
-10. 失败修复（L1/L2 自动，L3 人工）
-11. QA + 集成审查
+10. 失败修复（L1/L2 自动，L3 人工）；dispatch.py reconcile 对账僵尸/超时
+11. QA + 集成审查（dispatch.py record-result 写执行层结果，主控验收层核验）
 12. 进度回写（task_source 适配器，追加不覆盖）
 13. 最终报告 → Verifier 门禁通过 → 自动 task_finish（读回确认）→ **不自动 task_close**
 ```
+
+> **状态源**：DAG 节点执行状态唯一真相源是 agent-manager SQLite（`node_dispatches`）。`run-state.json` 是 `dispatch.py export-state` 的只读快照。主控/Skill/Subagent 禁止直接改 JSON。
 
 ## 核心规则
 
@@ -107,6 +109,7 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 | Agent 启用过滤、并行调度、报告格式 | `references/agent-dispatch.md` |
 | 项目配置加载、技术栈适配、无适配器运行 | `references/project-adaptation.md` |
 | 重大决策人工介入（P0/P1/P2、阻塞等待、钉钉回复、Session 恢复） | `references/human-decision-policy.md` |
+| 发版流程（计划→门禁→白名单构建→报告→禅道回写；部署 Job 禁自动触发） | `references/release-process.md` |
 
 ## templates
 

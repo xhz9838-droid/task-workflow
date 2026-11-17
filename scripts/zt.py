@@ -98,6 +98,50 @@ def cmd_progress(args):
     return 0 if ok else 3
 
 
+def cmd_worklog(args):
+    """记工时（新增工作日志：日期/耗时/工作内容）。
+
+    走 MVC 端点 task-recordWorkhour-<id>.html（Token 头认证，实证方式同 VERIFIED_WRITE）。
+    注意：禅道 REST 无工时日志端点（实测 404），只能走此 MVC 端点；该端点受迭代 ACL
+    约束，账号无迭代权限时返回『您无权访问该迭代』（如实报错，不谎报成功）。
+    consumed 必须由人显式提供——PRD 5.5 禁止猜填工时。
+    """
+    import urllib.parse
+    import urllib.request
+    import urllib.error
+
+    client = _client()
+    task = _load_own_task(client, args.task)
+    before = str(task.get("consumed") or "0")
+    tok = client._token
+    url = "%s/task-recordWorkhour-%s.html" % (client.base_url.rstrip("/"), args.task)
+    fields = {"date": args.date, "consumed": str(args.consumed), "work": args.work}
+    if args.left:
+        fields["left"] = str(args.left)
+    body = urllib.parse.urlencode(fields).encode()
+    req = urllib.request.Request(url, data=body, method="POST",
+                                 headers={"Token": tok,
+                                          "Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        html = e.read().decode("utf-8", "replace")
+        print("❌ HTTP %s: %s" % (e.code, html[:300]))
+        return 3
+    if "无权访问" in html:
+        print("❌ 记工时被拦截：『您无权访问该迭代』——账号缺迭代/项目权限（解决后重试即可）")
+        return 2
+    # 读回核验：任务 consumed 变化 + 页面回执特征
+    after_task = client.task_detail(args.task)
+    after = str(after_task.get("consumed") or "0")
+    ok = after != before
+    print("读回核验：consumed %s -> %s %s" % (before, after, "✅" if ok else "⚠️ 未变化"))
+    if not ok:
+        print("页面回执（前 200 字）：", html[:200])
+    return 0 if ok else 3
+
+
 def cmd_projects(args):
     """只读：当前用户可访问的禅道项目列表（项目注册第 1 步）。"""
     client = _client()
@@ -149,6 +193,13 @@ def main():
     g.add_argument("--stage", required=True, help="阶段键，如 design / backend / jenkins-1")
     g.add_argument("--text", required=True)
     g.set_defaults(func=cmd_progress)
+    w = sub.add_parser("worklog", help="记工时：新增工作日志（日期/耗时/工作内容）")
+    w.add_argument("--task", required=True)
+    w.add_argument("--date", required=True, help="日期，如 2026-11-17")
+    w.add_argument("--consumed", required=True, type=float, help="本日消耗（小时）——人工提供，禁止猜填")
+    w.add_argument("--work", required=True, help="工作内容（已完成内容写这里，非 desc）")
+    w.add_argument("--left", type=float, default=None, help="预计剩余（小时，可选）")
+    w.set_defaults(func=cmd_worklog)
     j = sub.add_parser("projects", help="只读：当前用户可访问的禅道项目列表")
     j.set_defaults(func=cmd_projects)
     k = sub.add_parser("project", help="只读：任务→项目归属信息")
