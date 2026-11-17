@@ -1,0 +1,1 @@
+{"ts": "2026-11-16T20:38:21+08:00", "task": "HITL-E2E-2", "action": "human_decision.create", "detail": {"decision_id": "DEC-HITL-E2E-2-20382101", "level": "P1", "question": "端到端测试第二轮：请在钉钉回复 A 或 B（验证决策闭环）"}}

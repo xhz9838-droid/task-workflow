@@ -113,7 +113,7 @@ Original Claude Code Session → Continue Execution
 |---|---|---|
 | Agent 主动发起决策（真实 MCP 会话） | ✅ 已验证 | 决策 DEC-HITL-E2E-19130101 创建于 19:13:01（P1/方案/推荐齐全） |
 | Agent 阻塞不越权 | ✅ 已验证 | tool_waiting 19:13:11 起阻塞 600s；19:23:12 超时 → **安全挂起**（outcome 文件仅写"任务已挂起"，未继续任何操作） |
-| 用户钉钉回复 → 捕获/身份/入库 | ✅ 已验证 | 19:26:36 会话文件监听捕获用户（徐弘祖 / userId 17248148409976157）回复，决策 DECISION_RECEIVED；后续重复消息（"1"、"你好"）被幂等守卫拒绝（reply_rejected×2） |
+| 用户钉钉回复 → 捕获/身份/入库 | ✅ 已验证 | 19:26:36 会话文件监听捕获用户（徐弘祖 / userId <已脱敏>）回复，决策 DECISION_RECEIVED；后续重复消息（"1"、"你好"）被幂等守卫拒绝（reply_rejected×2） |
 | 决策注入/恢复记账 | ✅ 已验证 | RESUMING→RESUMED，resume_method 记录（含注入通道细节） |
 | 钉钉收到决策通知（cc-connect send） | ❌ **实测失败** | `cc-connect send` 虚报 "Message sent successfully" 但消息不到达（5 种寻址全试）；同一凭据直调钉钉官方 API `oToMessages/batchSend` → 200 送达 ✅ |
 | 通知通道修复 | ✅ 已完成 | 新增 `dingtalk_direct` 传输（官方机器人 API 直发优先，cc-connect 兜底），20:29 决策原文已补发 |

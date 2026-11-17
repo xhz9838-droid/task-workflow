@@ -131,7 +131,18 @@ class DecisionManager:
                                   fields={"notified_at": _now(),
                                           "last_error": res.get("error", "")[:300]})
             self._log(f"决策通知失败（决策继续等待，不放行）: {res.get('error')}")
+        # T06：任务进入等待人工决策态（可选回调，不影响无回调场景）
+        self._notify_task_state(rec.task_id, "WAITING_HUMAN", rec.decision_id)
         return self.store.get(rec.decision_id) or rec
+
+    def _notify_task_state(self, task_id: str, state: str, decision_id: str = "") -> None:
+        """桥接 TaskState（T06）：决策创建/完成时同步任务状态。"""
+        hook = getattr(self, "task_state_hook", None)
+        if hook:
+            try:
+                hook(task_id=task_id, state=state, decision_id=decision_id)
+            except Exception as e:
+                self._log(f"task_state_hook 异常（不影响决策）: {e}")
 
     # ------------------------------------------------------- 等待（有界）
     def wait_for_decision(self, decision_id: str, wait_seconds: int | None = None) -> dict:
@@ -228,8 +239,12 @@ class DecisionManager:
 
     def complete(self, decision_id: str) -> bool:
         """Agent 完成任务后确认决策闭环（RESUMED → COMPLETED）。"""
-        return self.store.transition(
+        rec = self.store.get(decision_id)
+        ok = self.store.transition(
             decision_id, DecisionStatus.COMPLETED,
             allowed_from={DecisionStatus.RESUMED, DecisionStatus.REJECTED},
             fields={"completed_at": _now()},
         )
+        if ok and rec:
+            self._notify_task_state(rec.task_id, "RUNNING", decision_id)  # T06: 决策闭环后任务恢复
+        return ok

@@ -24,7 +24,7 @@ if _ROOT not in sys.path:
 DEFAULTS = {
     "enabled": True,
     "deciders": [],                     # [{"user_id": "...", "name": "..."}]
-    "any_private_chat_user": True,      # 单聊（dingtalk:d:）中允许会话绑定用户决策
+    "any_private_chat_user": False,     # fail-closed：须显式配置决策人；True 才放行单聊会话主人
     "tool_wait_seconds": 300,           # MCP 工具有界等待
     "poll_interval_seconds": 2,
     "remind_after_seconds": 1800,
@@ -47,7 +47,7 @@ DEFAULTS = {
 class HitlConfig:
     enabled: bool = True
     deciders: list[dict] = field(default_factory=list)
-    any_private_chat_user: bool = True
+    any_private_chat_user: bool = False
     tool_wait_seconds: int = 300
     poll_interval_seconds: float = 2.0
     remind_after_seconds: int = 1800
@@ -78,18 +78,30 @@ class HitlConfig:
         return {str(d.get("user_id", "")) for d in self.deciders if d.get("user_id")}
 
     def is_authorized(self, user_id: str | None, *, chat_scope: str = "") -> bool:
-        """是否授权决策人。
+        """是否授权决策人（fail-closed）。
 
         - 白名单命中 → True
-        - 未配置白名单且为单聊（dingtalk:d:）→ 会话主人即授权（best-effort）
-        - 其余 → False
+        - 白名单为空且 any_private_chat_user=True 且单聊 → 会话主人（best-effort）
+        - **其余一律 False**（默认不放行任何用户）
         """
         if user_id and user_id in self.decider_ids():
             return True
         if not self.deciders and self.any_private_chat_user:
-            if chat_scope.startswith("d") or chat_scope == "private":
+            if str(chat_scope).startswith("d") or chat_scope == "private":
                 return True
         return False
+
+    def config_error(self) -> str:
+        """未配置决策人时的明确错误提示（不静默使用开发者身份）。"""
+        if self.deciders:
+            return ""
+        if self.any_private_chat_user:
+            return ""
+        return (
+            "HITL 未配置授权决策人。请在 config/adapters/hitl.local.yaml 配置 deciders，"
+            "或设环境变量 HITL_DECIDER_IDS=<userId1,userId2>，"
+            "或临时置 any_private_chat_user: true（仅单聊会话主人，不推荐）。"
+        )
 
 
 def resolve_cc_connect_bin(name: str = "cc-connect") -> str:
@@ -159,13 +171,45 @@ def _read_mgmt_token_from_cc_config() -> str:
 
 
 def load_config(path: str | None = None) -> HitlConfig:
+    """加载 HITL 配置（分层，后者覆盖前者）：
+
+    1. 内置默认 DEFAULTS
+    2. config/adapters/hitl.yaml          通用配置（Git 提交）
+    3. config/adapters/hitl.local.yaml    个人本地配置（gitignored，含 userId）
+    4. 环境变量                            HITL_DECIDER_IDS / HITL_DINGTALK_USER_ID 等
+
+    个人身份与凭据**不写入 Git**。
+    """
     cfg_path = path or os.path.join(_ROOT, "config", "adapters", "hitl.yaml")
     raw = dict(DEFAULTS)
+
+    # 1) 通用配置
     for k, v in (_read_yaml(cfg_path).get("human_decision") or {}).items():
         if k in raw:
             raw[k] = v
 
-    # 环境变量覆盖敏感项
+    # 2) 个人本地配置（gitignored）—— 同目录 hitl.local.yaml
+    if path is None:
+        local_path = os.path.join(_ROOT, "config", "adapters", "hitl.local.yaml")
+        if os.path.exists(local_path):
+            for k, v in (_read_yaml(local_path).get("human_decision") or {}).items():
+                if k in raw:
+                    raw[k] = v
+
+    # 3) 环境变量覆盖（个人身份 + 敏感凭据）
+    env_deciders = os.environ.get("HITL_DECIDER_IDS", "").strip()
+    if env_deciders:
+        raw["deciders"] = [
+            {"user_id": u.strip(), "name": u.strip()}
+            for u in env_deciders.split(",") if u.strip()
+        ]
+    if os.environ.get("HITL_DINGTALK_USER_ID"):
+        raw["dingtalk_user_id"] = os.environ["HITL_DINGTALK_USER_ID"]
+    if os.environ.get("HITL_ANY_PRIVATE_CHAT_USER", "").lower() in ("1", "true", "yes"):
+        raw["any_private_chat_user"] = True
+    elif os.environ.get("HITL_ANY_PRIVATE_CHAT_USER", "").lower() in ("0", "false", "no"):
+        raw["any_private_chat_user"] = False
+
     if os.environ.get("CC_MGMT_TOKEN"):
         raw["management_token"] = os.environ["CC_MGMT_TOKEN"]
     if not raw.get("management_token"):

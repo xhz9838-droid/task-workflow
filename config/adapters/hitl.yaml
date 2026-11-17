@@ -7,10 +7,11 @@ human_decision:
   # 授权决策人白名单（钉钉用户 ID）。为空且 any_private_chat_user=true 时，
   # 单聊（dingtalk:d:）中会话主人视为授权决策人（best-effort）。
   # 群聊回复在未配置 message.received hook 时无法验证身份，默认拒绝。
+  # 团队成员请在 hitl.local.yaml（gitignored）配置自己的 userId。
   deciders: []
-  #  - user_id: "17248148409976157"
-  #    name: "示例用户"
-  any_private_chat_user: true
+  #  - user_id: "${YOUR_DINGTALK_USER_ID}"   # 个人 userId 放 hitl.local.yaml（gitignored）
+  #    name: "${YOUR_NAME}"
+  any_private_chat_user: false   # fail-closed：须显式配置 deciders；true 才放行单聊会话主人（不推荐）
 
   # MCP 工具有界等待（秒）。超时后安全挂起，绝不放行未批准操作。
   tool_wait_seconds: 300

@@ -1,0 +1,17 @@
+{
+  "task_id": "3415",
+  "cc_connect_project": "personal",
+  "cc_connect_session": "",
+  "claude_session_id": "",
+  "started_at": "2026-11-17T10:42+08:00",
+  "updated_at": "2026-11-17T10:42+08:00",
+  "worktrees": {},
+  "jenkins": {
+    "last_build": null,
+    "build_url_template": "http://10.0.0.172:3194/job/<job>/{build_number}"
+  },
+  "recovery": {
+    "last_checkpoint_at": "2026-11-17T10:42:19+08:00",
+    "resumable": true
+  }
+}

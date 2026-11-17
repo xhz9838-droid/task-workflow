@@ -1,0 +1,222 @@
+openapi: 3.0.3
+info:
+  title: 打卡配置（打卡规则）列表接口契约 — 任务 3415
+  description: |
+    任务 3415【测试】打卡配置列表新增字段是否启用围栏。
+
+    **契约不变（x-contract-status: unchanged）**：列表响应 schema `ClockRuleVO`
+    自始包含 `fenceRequired` 字段（证据：jeebootx-sanitation-api/.../vo/ClockRuleVO.java:47-48），
+    本次仅前端新增列展示该既有字段，不新增/不修改任何接口字段。
+
+    本文件为「涉及接口」的契约快照（以代码为准的记录），非新增契约。
+    证据来源：
+    - 控制器 SanitationClockRuleController.java:71-75（page）、:99-102（detail）、:151-167（create/update）
+    - VO/DTO：ClockRuleVO.java、ClockRuleSaveDTO.java、ClockRuleQueryDTO.java
+    - 响应封装 R：{ code: int, msg: string, data: T }（jeebootx-common-core/.../util/R.java:43-62）
+  version: "1.0.0"
+x-contract-status: unchanged
+x-task-id: "3415"
+
+servers:
+  - url: /sanitation
+    description: 环卫微服务（网关路由前缀，前端实际调用 /sanitation/clock-rule/page，见 api/sanitation/clockRule.ts:7）
+
+tags:
+  - name: clock-rule
+    description: 打卡规则（打卡配置）管理
+
+paths:
+  /clock-rule/page:
+    get:
+      tags: [clock-rule]
+      operationId: pageClockRules
+      summary: 分页查询打卡规则（打卡配置列表）
+      description: |
+        打卡配置列表数据源。响应 records 内每条为 ClockRuleVO，含 `fenceRequired`
+        （0=不启用围栏校验；1/缺省=启用）。证据：SanitationClockRuleServiceImpl.java:182-205（pageByScope）、:865（VO 映射）。
+        数据范围：排除系统内置规则 system_flag='1'（:196-197）；非超管仅本项目（:198-201）。
+      parameters:
+        - name: current
+          in: query
+          schema: { type: integer, example: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, example: 10 }
+        - name: keyword
+          in: query
+          description: 规则名称模糊匹配（ClockRuleQueryDTO.java:30-31）
+          schema: { type: string }
+        - name: project
+          in: query
+          description: 项目部门ID（ClockRuleQueryDTO.java:36-37）
+          schema: { type: integer, format: int64 }
+        - name: team
+          in: query
+          description: 班组部门ID（ClockRuleQueryDTO.java:33-34）
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: R 信封，data 为分页结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/R"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ClockRulePage"
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  records:
+                    - id: "9000000000000001234"
+                      ruleName: "白天打卡"
+                      deptId: null
+                      deptName: null
+                      projectId: "1930000000000000001"
+                      projectName: "城东项目"
+                      targetType: "PERSON"
+                      targetIds: "101,102"
+                      targetNames: ["保洁员", "司机"]
+                      fenceRequired: "1"
+                      systemFlag: "0"
+                      clockCount: 2
+                      lateThresholdMinutes: 60
+                      slots: null
+                  total: 1
+                  current: 1
+                  size: 10
+
+  /clock-rule/{id}:
+    get:
+      tags: [clock-rule]
+      operationId: getClockRule
+      summary: 打卡规则详情（含有序时段）
+      description: 契约不变；详情同样含 fenceRequired。证据：SanitationClockRuleController.java:99-102。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: R 信封，data 为 ClockRuleVO（含 slots）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/R"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ClockRuleVO" }
+
+  /clock-rule:
+    post:
+      tags: [clock-rule]
+      operationId: createClockRule
+      summary: 新建打卡规则
+      description: |
+        契约不变：请求体 ClockRuleSaveDTO 已含 `fenceRequired`（ClockRuleSaveDTO.java:40-41），
+        服务端原样落库（SanitationClockRuleServiceImpl.java:107）。
+        备注：当前 PC 弹窗硬编码 fenceRequired='1'（WorkStandard/index.vue:396）；
+        若待确认问题 Q1 确认开放弹窗开关（FR-2），前端仅改为传用户选择值，本契约无需变更。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClockRuleSaveDTO" }
+      responses:
+        "200":
+          description: R 信封，data 为新建规则 ID
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/R"
+                  - type: object
+                    properties:
+                      data: { type: integer, format: int64 }
+
+components:
+  schemas:
+    R:
+      type: object
+      description: 统一响应信封（R.java:43-62）
+      properties:
+        code: { type: integer }
+        msg: { type: string }
+        data: {}
+
+    FenceRequired:
+      type: string
+      description: |
+        是否启用围栏校验（列 sanitation_clock_rule.fence_required，char(1) DEFAULT '1'，列注释「是否校验围栏」）。
+        取值："0"=不启用围栏校验；"1"=启用；null/脏值按启用处理。
+        消费口径证据：SanitationClockRecordServiceImpl.java:936-955（isFenceRequired：仅 "0" 关闭，其余默认校验）。
+      enum: ["0", "1"]
+      example: "1"
+      # 注：enum 为规范取值；历史数据可能出现 null/脏值，读取方须按「非 0 即启用」兜底（API 契约不强校验）。
+
+    ClockRuleVO:
+      type: object
+      description: 打卡规则展示 VO（ClockRuleVO.java:18-61）。契约不变。
+      properties:
+        id: { type: integer, format: int64, description: 规则ID（雪花） }
+        ruleName: { type: string, description: 规则名称 }
+        deptId: { type: integer, format: int64, nullable: true, description: 归属班组部门ID }
+        deptName: { type: string, nullable: true }
+        projectId: { type: integer, format: int64, nullable: true, description: 归属项目部门ID(type=9) }
+        projectName: { type: string, nullable: true }
+        targetType: { type: string, example: "PERSON" }
+        targetIds: { type: string, nullable: true, description: 目标岗位/角色ID列表（逗号拼接） }
+        targetNames:
+          type: array
+          nullable: true
+          items: { type: string }
+        fenceRequired:
+          allOf: [{ $ref: "#/components/schemas/FenceRequired" }]
+          description: 是否启用围栏（本任务列表新增列展示的字段；契约已有，不变）
+        systemFlag: { type: string, description: "是否系统内置(1=系统内置;0=自建)" }
+        clockCount: { type: integer, nullable: true, description: 打卡次数 }
+        lateThresholdMinutes: { type: integer, nullable: true, description: 迟到阈值(分钟) }
+        slots:
+          type: array
+          nullable: true
+          description: 有序时段列表（列表接口不返回，详情返回）
+          items: { type: object }
+
+    ClockRulePage:
+      type: object
+      properties:
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/ClockRuleVO" }
+        total: { type: integer, format: int64 }
+        current: { type: integer, format: int64 }
+        size: { type: integer, format: int64 }
+
+    ClockRuleSaveDTO:
+      type: object
+      description: 打卡规则保存 DTO（ClockRuleSaveDTO.java:25-50）。契约不变。
+      required: [ruleName, slots]
+      properties:
+        ruleName: { type: string }
+        deptId: { type: integer, format: int64, nullable: true }
+        projectId: { type: integer, format: int64, nullable: true }
+        targetIds: { type: string, example: "101,102" }
+        fenceRequired:
+          allOf: [{ $ref: "#/components/schemas/FenceRequired" }]
+          description: 是否启用围栏；未传时落库为 null，读取按启用处理
+        slots:
+          type: array
+          items:
+            type: object
+            required: [slotName, startTime, endTime]
+            properties:
+              slotName: { type: string }
+              startTime: { type: string, format: partial-time, example: "06:00:00" }
+              endTime: { type: string, format: partial-time, example: "11:00:00" }
+              slotOrder: { type: integer }
+        lateThresholdMinutes: { type: integer, nullable: true, description: 不传默认 60 }

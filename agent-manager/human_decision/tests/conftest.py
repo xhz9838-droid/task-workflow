@@ -116,7 +116,7 @@ def make_record(store, **kw) -> DecisionRecord:
         options=kw.get("options", [DecisionOption("A", "方案A"), DecisionOption("B", "方案B")]),
         recommended_option=kw.get("recommended_option", "A"),
         project_key=kw.get("project_key", "demo"),
-        cc_session_key=kw.get("cc_session_key", "dingtalk:d:cidX:17248148409976157"),
+        cc_session_key=kw.get("cc_session_key", "dingtalk:d:cidX:100000000000000001"),
         cc_project=kw.get("cc_project", "personal"),
     )
     store.create(rec)

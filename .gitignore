@@ -34,3 +34,7 @@ agent-manager/logs/
 agent-manager/**/*.db
 agent-manager/**/*.db-wal
 agent-manager/**/*.db-shm
+
+# HITL 个人本地配置（userId 等个人身份，不入库）
+config/adapters/hitl.local.yaml
+config/**/hitl.local.yaml

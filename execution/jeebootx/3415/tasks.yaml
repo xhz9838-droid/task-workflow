@@ -1,0 +1,120 @@
+# 任务 DAG 草案 — 3415【测试】打卡配置列表新增字段是否启用围栏
+# 状态：草案（dw-architect 产出，待人工设计确认 A3 后冻结）
+# 结论要点：仅 PC 前端 1 文件改动；无后端/无 DDL/无契约变更（见 design/architecture.md）
+# 若 A3 确认 FR-2（弹窗开关，BLK-3415-01），B2 范围同文件追加弹窗改造，后端仍零改动
+
+project_key: "jeebootx"
+task_id: "3415"
+created_at: "2026-11-17T11:30:00+08:00"
+baseline_branch: "dev"
+
+# 节点状态：pending | running | done | unverified | failed | blocked
+nodes:
+  - id: A1
+    name: "需求分析"
+    agent: dw-architect
+    depends_on: []
+    files_owned: []
+    deliverables:
+      - "design/requirements.md"
+      - "design/data-dictionary.md"
+    acceptance:
+      - "业务功能/流程/角色权限/数据实体/API/页面/约束/异常/验收标准齐全"
+      - "结论标注证据（文件:行号）；desc 缺失处列待确认问题"
+    status: done
+
+  - id: A2
+    name: "架构与数据库设计"
+    agent: dw-architect
+    depends_on: [A1]
+    files_owned: []
+    deliverables:
+      - "design/architecture.md"
+      - "design/ddl.sql"
+      - "design/openapi.yaml"
+    acceptance:
+      - "与现有系统兼容；优先复用现有能力（复用 fence_required，无 DDL，契约不变）"
+      - "改动点定位到文件级"
+    status: done
+
+  - id: A3
+    name: "人工设计确认"
+    agent: main
+    depends_on: [A2]
+    files_owned: []
+    deliverables:
+      - "decisions.md"
+    acceptance:
+      - "L3 项逐项决策：BLK-3415-01（弹窗是否开放围栏开关，FR-2）、BLK-3415-02（列头/展示文案）"
+      - "确认后冻结本 tasks.yaml"
+    status: pending
+
+  - id: B2
+    name: "前端开发（列表新增列）"
+    agent: web-frontend
+    depends_on: [A3]
+    files_owned:
+      - "jeebootx-ui/src/views/sanitation/Config/WorkStandard/index.vue"
+    deliverables:
+      - "WorkStandard/index.vue 表格新增「是否启用围栏」列 + 列宽预算注释更新"
+      - "（条件）若 A3 确认 FR-2：弹窗围栏开关 + buildSavePayload 去硬编码 fenceRequired:'1'"
+    acceptance:
+      - "构建通过、lint 通过"
+      - "展示口径：仅 fenceRequired==='0' 显示不启用，其余显示启用（对齐 SanitationClockRecordServiceImpl#isFenceRequired）"
+      - "与 openapi.yaml 一致（契约不变，不改 api/sanitation/**）"
+    status: pending
+
+  # B1 后端开发：本任务不需要（DB/实体/VO/DTO/消费逻辑均已存在，证据见 design/architecture.md §2）
+
+  - id: C1
+    name: "QA 验收"
+    agent: qa-engineer
+    depends_on: [B2]
+    files_owned:
+      - "acceptance/acceptance-matrix.md"
+    deliverables:
+      - "acceptance/acceptance-matrix.md 执行结果回填"
+    acceptance:
+      - "AC-1..AC-5 全部有真实证据；无法验证标 BLOCKED"
+      - "AC-6/AC-7 按 A3 对 FR-2 的决策执行或取消"
+    status: pending
+
+  - id: C2
+    name: "集成审查"
+    agent: integration-reviewer
+    depends_on: [C1]
+    files_owned: []
+    deliverables:
+      - "acceptance/integration-review.md"
+    acceptance:
+      - "跨端契约一致性核对：确认 app 端零改动结论（useLocStatus 不读规则级 fenceRequired）"
+    status: pending
+
+  - id: D1
+    name: "CI 构建"
+    agent: main
+    depends_on: [C2]
+    files_owned: []
+    deliverables:
+      - "jenkins/build-summary.json"
+    acceptance:
+      - "最终 result + 测试报告明确"
+    status: pending
+
+  - id: D2
+    name: "最终报告"
+    agent: main
+    depends_on: [D1]
+    files_owned: []
+    deliverables:
+      - "final-report.md"
+    acceptance:
+      - "含任务ID/分支/commit/各Agent交付/CI URL/测试报告/未完成项/决策记录/验收结果"
+    status: pending
+
+concurrency:
+  max_parallel_agents: 2
+
+retry:
+  max_attempts: 2
+  strategy: exponential-backoff

@@ -3,3 +3,15 @@
 {"ts": "2026-11-16T17:31:08+08:00", "task": "3413", "action": "workflow.recovery", "detail": {"stage": "T06-QA1", "action": "re-dispatch QA1", "rule": "continuation-protocol-3", "prev_attempt": "stopped-no-report"}}
 {"ts": "2026-11-16T17:46:38+08:00", "task": "3413", "action": "decision.L2", "detail": {"id": "D-3413-001", "decision": "skip frontend build", "scope": "QA1", "level": "L2"}}
 {"ts": "2026-11-16T17:52:30+08:00", "task": "3413", "action": "QA1.complete", "detail": {"verdict": "PARTIAL", "pass": 7, "blocked": 12, "build": "fail-then-skipped"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170507", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20271107", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302207", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265107", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290907", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484307", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533707", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554407", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000707", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044707", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115707", "level": "P2", "question": "q1"}}
+{"ts": "2026-11-17T11:18:33+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183307", "level": "P2", "question": "q1"}}

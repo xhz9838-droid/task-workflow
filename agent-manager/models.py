@@ -50,6 +50,9 @@ class TaskState(str, Enum):
     RETRY_WAIT = "RETRY_WAIT"
     VERIFYING = "VERIFYING"
     BLOCKED = "BLOCKED"
+    # HITL 阻塞：Agent 已发起人工决策，等待用户回复（T06）
+    # 与 BLOCKED 区分：BLOCKED 是环境/依赖阻塞，WAITING_HUMAN 是主动等待人工
+    WAITING_HUMAN = "WAITING_HUMAN"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"

@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS decision_replies (
     created_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_dr_decision ON decision_replies(decision_id);
+-- 幂等：同一决策的同一 msg_id 只允许一条（并发下防重复入库）
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dr_decision_msgid ON decision_replies(decision_id, msg_id);
 
 CREATE TABLE IF NOT EXISTS decision_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -271,7 +273,7 @@ class DecisionStore:
                 if dup:
                     return None
             cur = self._conn.execute(
-                """INSERT INTO decision_replies
+                """INSERT OR IGNORE INTO decision_replies
                    (decision_id, raw_text, parsed_choice, parsed_comment, kind,
                     reply_user_id, reply_user_name, source, msg_id, accepted,
                     reject_reason, created_at)

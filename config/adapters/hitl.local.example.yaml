@@ -1,0 +1,31 @@
+# HITL 个人本地配置模板
+# 复制为 hitl.local.yaml 后填写；hitl.local.yaml 已 gitignore，不提交 Git
+#
+# 用途：每位团队成员在自己电脑配置自己的钉钉 userId，无需改项目源代码。
+
+human_decision:
+  # 授权决策人白名单（钉钉用户 ID）
+  # 获取方式：向钉钉机器人发送 /whoami，或从 cc-connect 会话键尾段取
+  #   会话键格式：dingtalk:d:cidXXX:<你的userId> ← 最后一段即 userId
+  deciders:
+    - user_id: "${YOUR_DINGTALK_USER_ID}"
+      name: "${YOUR_NAME}"
+
+  # 直发通道目标用户（可选，留空则从单聊会话键解析）
+  dingtalk_user_id: "${YOUR_DINGTALK_USER_ID}"
+
+  # 是否放行任何单聊用户（不推荐，仅调试用）
+  # 保持 false = 只有上面 deciders 白名单内用户可决策
+  any_private_chat_user: false
+
+# ── 环境变量替代方案（优先级更高） ──
+# 也可不建此文件，改用环境变量：
+#   HITL_DECIDER_IDS=<你的userId>
+#   HITL_DINGTALK_USER_ID=<你的userId>
+#   HITL_ANY_PRIVATE_CHAT_USER=false
+#
+# ── 敏感凭据（绝不写入此文件） ──
+# 钉钉 AppSecret / management token 走环境变量或 cc-connect config.toml：
+#   DINGTALK_APP_KEY=xxx
+#   DINGTALK_APP_SECRET=xxx
+#   CC_MGMT_TOKEN=xxx

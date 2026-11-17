@@ -1,0 +1,97 @@
+{
+  "project_key": "jeebootx",
+  "task_id": "3415",
+  "agent": "dw-architect",
+  "task_ids": ["A1", "A2"],
+  "status": "done",
+  "worktree": "",
+  "branch": "",
+  "commit": "",
+  "files_changed": [
+    "design/requirements.md",
+    "design/architecture.md",
+    "design/ddl.sql",
+    "design/openapi.yaml",
+    "design/data-dictionary.md",
+    "acceptance/acceptance-matrix.md",
+    "tasks.yaml",
+    "agent-reports/dw-architect-1.json"
+  ],
+  "features_implemented": [],
+  "core_code_notes": [
+    "需求核心结论：唯一必做改动是 PC 前端 jeebootx-ui/src/views/sanitation/Config/WorkStandard/index.vue 表格新增「是否启用围栏」列；DB 列 fence_required、实体/VO/DTO、列表接口响应均已存在，无 DDL、无 API 契约变更",
+    "展示口径与后端 isFenceRequired 对齐：仅 fenceRequired==='0' 显示「不启用」，null/脏值/'1' 均显示「启用」（SanitationClockRecordServiceImpl.java:936-955）",
+    "打卡配置列表页 = RuleConfig tab「打卡配置」→ WorkStandard/index.vue（RuleConfig/index.vue:18）；列表接口 GET /sanitation/clock-rule/page（ClockRuleVO 已含 fenceRequired，SanitationClockRuleServiceImpl.java:865）",
+    "弹窗现状硬编码 fenceRequired:'1'（WorkStandard/index.vue:396），是否开放开关列为待确认 FR-2（L3），未擅自纳入范围",
+    "移动端零改动：端侧围栏软提示只用网格多边形+全局容差（useLocStatus.ts:131-134），规则级 fenceRequired 仅后端打卡提交时消费"
+  ],
+  "tests": [
+    {
+      "cmd": "",
+      "result": "not_run",
+      "evidence": "设计阶段无代码，未编写/未运行任何测试；验收用例已写入 acceptance/acceptance-matrix.md（AC-1..AC-7，待 QA 阶段执行）"
+    }
+  ],
+  "not_run": [
+    {
+      "cmd": "任意构建/单测/lint",
+      "reason": "本阶段仅产出设计文档，业务仓库只读，无代码改动"
+    }
+  ],
+  "blocked": [],
+  "cross_checks": {
+    "requirements_FR": {
+      "status": "pass",
+      "notes": "FR-1（列表新增列）有代码缺口证据（WorkStandard/index.vue:36-73 无围栏列）与数据链路证据；FR-2（弹窗开关）不擅自纳入，列 BLK-3415-01 待人工决策；所有结论标注 文件:行号，推测项已标注（app 端无打卡配置列表管理页为推测）"
+    },
+    "reuse_over_redesign": {
+      "status": "pass",
+      "notes": "复用 sanitation_clock_rule.fence_required（db/jeebootx_sanitation.sql:206）与现有 isFenceRequired 消费口径，未新增字段/接口/流程"
+    },
+    "contract_frozen": {
+      "status": "pass",
+      "notes": "openapi.yaml 标 x-contract-status: unchanged；ClockRuleVO/ClockRuleSaveDTO 自始含 fenceRequired（ClockRuleVO.java:47-48、ClockRuleSaveDTO.java:40-41），无 L3 契约变更"
+    }
+  },
+  "blockers": [
+    {
+      "id": "BLK-3415-01",
+      "level": "L3",
+      "summary": "待确认：新增/编辑弹窗是否开放「是否启用围栏」开关（FR-2）",
+      "impact": "若不开放，弹窗持续硬编码 fenceRequired:'1'（WorkStandard/index.vue:396），FR-1 列对所有自建规则恒显「启用」，字段仅展示不可配置；若开放，B2 同文件追加弹窗开关（后端零改动即可支持）",
+      "recommendation": "本次先按标题字面范围仅做列表列（FR-1）；FR-2 由人工决策后实施，成本低（同文件、无后端改动）",
+      "wait_for": "人工设计确认（A3，decisions.md）",
+      "resume_steps": "A3 确认后：若同意 FR-2，B2 在 WorkStandard/index.vue 弹窗表单加开关并把 buildSavePayload 的硬编码 '1' 改为表单值；否则维持仅列表列",
+      "resolution": null
+    },
+    {
+      "id": "BLK-3415-02",
+      "level": "L3",
+      "summary": "待确认：列头/展示文案定稿（「是否启用围栏」+「启用/不启用」）",
+      "impact": "纯文案，不影响功能；后端字段注释为「是否校验围栏」，存在措辞差异",
+      "recommendation": "按任务标题用词「是否启用围栏」实施；如需统一为「是否校验围栏」仅改 label 文本",
+      "wait_for": "人工设计确认（A3）",
+      "resume_steps": "A3 给出文案后 B2 按定稿实施；无不同意见则按默认文案",
+      "resolution": null
+    }
+  ],
+  "git_diff_summary": {
+    "files": 8,
+    "insertions": 0,
+    "deletions": 0,
+    "uncommitted_restored": "设计阶段不涉及 worktree/分支/commit；全部产物写入编排仓库 execution/jeebootx/3415/，业务仓库零写入（只读核验）"
+  },
+  "unresolved_issues": [
+    "Q1（=BLK-3415-01）：弹窗是否开放围栏开关（FR-2）——desc 未提供，不猜测",
+    "Q2（=BLK-3415-02）：列头/展示文案定稿",
+    "desc 整体未提供（task-context.md:26）：需求仅由标题+变更历史推得，若有人工补充的验收标准/交互稿需并入 requirements.md"
+  ],
+  "acceptance_vs_matrix": {
+    "FR-1": "AC-1..AC-4 已定义（acceptance/acceptance-matrix.md），状态 not_run（设计阶段无代码）",
+    "NFR-1": "AC-2/AC-3 覆盖口径一致性，not_run",
+    "NFR-2": "AC-5 覆盖回归与权限，not_run",
+    "FR-2": "AC-6/AC-7 已定义，状态 blocked（BLK-3415-01）"
+  },
+  "verdict": "PASS",
+  "notes": "A1/A2 全部交付物已落盘 execution/jeebootx/3415/（requirements.md/architecture.md/ddl.sql/openapi.yaml/data-dictionary.md/tasks.yaml/acceptance-matrix.md）。设计结论：复用既有 fence_required 字段，改动收敛为 PC 前端单文件加一列，无 DDL、无契约变更、无后端/移动端改动。tasks.yaml 为草案（B1 后端节点按证据取消），待 A3 人工确认（含 2 个 L3 文案/交互决策）后冻结。"
+}

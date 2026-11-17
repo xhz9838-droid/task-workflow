@@ -43,7 +43,38 @@ except ImportError:
 
 
 # 故障 → 分类映射（供未显式标注 fault 的异常兜底）
-FAULT_KEYWORDS: list[tuple[str, FaultClass]] = [
+# T07 异常分类扩展：MCP / 通知 / HITL / 进程异常
+FAULT_KEYWORDS_EX: list[tuple[str, FaultClass]] = [
+    # MCP 调用异常（多为瞬时，可重试）
+    ("mcp", FaultClass.TRANSIENT),
+    ("tool call failed", FaultClass.TRANSIENT),
+    ("jsonrpc", FaultClass.TRANSIENT),
+    ("stream closed", FaultClass.TRANSIENT),
+    # 通知失败（瞬时，可重试）
+    ("notify", FaultClass.TRANSIENT),
+    ("notification failed", FaultClass.TRANSIENT),
+    ("dingtalk", FaultClass.TRANSIENT),
+    ("ratelimit", FaultClass.TRANSIENT),
+    ("too many requests", FaultClass.TRANSIENT),
+    ("429", FaultClass.TRANSIENT),
+    # HITL 等待超时（人工，不重试、不自动批准）
+    ("human decision", FaultClass.HUMAN),
+    ("waiting for human", FaultClass.HUMAN),
+    ("decision timeout", FaultClass.HUMAN),
+    ("hitl", FaultClass.HUMAN),
+    # 进程异常消失（永久，需分析）
+    ("process disappeared", FaultClass.PERMANENT),
+    ("process not found", FaultClass.PERMANENT),
+    ("no such process", FaultClass.PERMANENT),
+    ("abnormal exit", FaultClass.PERMANENT),
+    ("segfault", FaultClass.PERMANENT),
+    ("killed", FaultClass.PERMANENT),
+    # 恢复失败（永久）
+    ("resume failed", FaultClass.PERMANENT),
+    ("checkpoint", FaultClass.PERMANENT),
+]
+
+FAULT_KEYWORDS: list[tuple[str, FaultClass]] = FAULT_KEYWORDS_EX + [
     # TRANSIENT
     ("timeout", FaultClass.TRANSIENT),
     ("timed out", FaultClass.TRANSIENT),

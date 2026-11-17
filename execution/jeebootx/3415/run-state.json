@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "project_key": "jeebootx",
+  "task_id": "3415",
+  "stage": "T05-design-confirm",
+  "updated_at": "2026-11-17T11:02:00+08:00",
+
+  "task_source": {
+    "provider": "zentao",
+    "task_ref": "3415",
+    "verified_owner": true,
+    "status": "wait"
+  },
+
+  "config": {
+    "project_config": "config/projects/jeebootx.yaml",
+    "user_config": "config/users/xuhongzu.yaml",
+    "adapters": ["zentao", "jenkins", "notification", "audit"]
+  },
+
+  "dag": {
+    "file": "tasks.yaml",
+    "nodes": [
+      {"id": "A1", "agent": "dw-architect", "status": "done", "depends_on": [], "report": "agent-reports/dw-architect-1.json", "attempts": 1, "verification_note": "规则4核验：design/requirements.md 落盘；证据抽查通过（DB列 sql:206 / Entity:67 / VO:48 / DTO:41 / types.ts:154 / 列表页无列）"},
+      {"id": "A2", "agent": "dw-architect", "status": "done", "depends_on": ["A1"], "report": "agent-reports/dw-architect-1.json", "attempts": 1, "verification_note": "规则4核验：architecture.md/ddl.sql(无需DDL)/openapi.yaml(contract unchanged)/data-dictionary.md 落盘且语法有效"},
+      {"id": "A3", "agent": "main", "status": "ready", "depends_on": ["A2"], "note": "人工设计确认 + 2 个 L3 逐项决策（BLK-3415-01/02）"},
+      {"id": "B2", "agent": "dw-web-frontend", "status": "pending", "depends_on": ["A3"], "note": "前端开发（仅 jeebootx-ui WorkStandard/index.vue）"},
+      {"id": "C1", "agent": "dw-qa-engineer", "status": "pending", "depends_on": ["B2"], "note": "QA 验收（AC-1..AC-7）"},
+      {"id": "C2", "agent": "dw-integration-reviewer", "status": "pending", "depends_on": ["C1"], "note": "集成审查"},
+      {"id": "D1", "agent": "main", "status": "pending", "depends_on": ["C2"], "note": "CI 构建（白名单：ct-jeebootx-sanitation / jeebootx-ui）"},
+      {"id": "D2", "agent": "main", "status": "pending", "depends_on": ["D1"], "note": "最终报告"}
+    ]
+  },
+
+  "worktrees": {},
+  "agents": {"dw-architect": {"runs": 1, "last": "agent-reports/dw-architect-1.json"}},
+
+  "ci": {
+    "provider": "jenkins",
+    "enabled": true,
+    "jobs": ["ct-jeebootx-sanitation", "jeebootx-ui"],
+    "builds": []
+  },
+
+  "task_writes": {"count": 0, "last": null},
+  "retry_log": [],
+  "blockers": [
+    {
+      "id": "BLK-3415-01",
+      "level": "L3",
+      "summary": "新增/编辑弹窗是否开放「是否启用围栏」开关（FR-2 范围决策）",
+      "impact": "不开放：列表列对自建规则恒显「启用」（弹窗硬编码 '1'）；开放：B2 同文件追加弹窗开关，后端零改动",
+      "recommendation": "本次仅做列表列（标题字面范围），弹窗开关另行任务",
+      "wait_for": "用户决策",
+      "resume_steps": "记录 decisions.md → 冻结 tasks.yaml → 派发 B2",
+      "resolution": null
+    },
+    {
+      "id": "BLK-3415-02",
+      "level": "L3",
+      "summary": "列头/展示文案定稿",
+      "impact": "纯文案，低成本可调",
+      "recommendation": "「是否启用围栏」列头 + 「启用/不启用」（任务标题用词）",
+      "wait_for": "用户决策",
+      "resume_steps": "记录 decisions.md → 派发 B2",
+      "resolution": null
+    }
+  ],
+  "checkpoints": [
+    {
+      "at": "2026-11-17T10:42:19+08:00",
+      "stage": "T01-task-fetch",
+      "completed_nodes": [],
+      "next_nodes": ["A1"],
+      "evidence": {
+        "task_fetch": "zentao task 3415 detail via zt.py/client (read-only)",
+        "startup_checks": "project config/repo paths/user/adapter/identity all verified"
+      }
+    },
+    {
+      "at": "2026-11-17T11:02:00+08:00",
+      "stage": "T02-T03-design",
+      "completed_nodes": ["A1", "A2"],
+      "next_nodes": ["A3"],
+      "evidence": {
+        "artifacts": "8 files in execution/jeebootx/3415/ (design/*, acceptance/*, tasks.yaml, agent-reports/dw-architect-1.json)",
+        "spot_checks": "DB列/Entity/VO/DTO/前端types/列表页缺列/openapi unchanged 全部核实",
+        "core_conclusion": "数据链路已通，唯一缺口=PC 列表列，改动收敛为 jeebootx-ui 单文件"
+      }
+    }
+  ],
+  "last_acceptance": null
+}

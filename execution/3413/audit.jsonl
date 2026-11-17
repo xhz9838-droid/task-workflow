@@ -1,2 +1,158 @@
 {"ts": "2026-11-16T14:08:38+08:00", "task": "3413", "action": "ccconnect.design_confirm", "detail": {"stage": "T05", "blocker": null, "rc": 0}}
 {"ts": "2026-11-16T16:06:11+08:00", "task": "3413", "action": "T06.W1.done", "detail": {"agent": "web-frontend", "commit": "1c302d6", "files": 1, "insertions": 105, "deletions": 3, "eslint": "0err", "build": "8581modules"}}
+{"ts": "2026-11-16T19:17:04+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170401", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-16T19:17:04+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-19170401", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T19:17:04+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170402", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-19170402", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170503", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-19170503", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170504", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-19170504", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170505", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170506", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-19170506", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-19170509", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T19:17:05+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-19170509", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:27:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20270901", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-16T20:27:09+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20270901", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:27:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20270902", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:27:10+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20270902", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:27:10+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20271003", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:27:10+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20271003", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20271104", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20271104", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20271105", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20271106", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20271106", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20271109", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:27:11+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20271109", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:30:20+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302001", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-16T20:30:20+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20302001", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:30:20+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302002", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:30:21+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20302002", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302203", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20302203", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302204", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20302204", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302205", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302206", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20302206", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-20302209", "level": "P2", "question": "q"}}
+{"ts": "2026-11-16T20:30:22+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-20302209", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T09:26:50+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265001", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T09:26:50+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-09265001", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T09:26:50+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265002", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-09265002", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265103", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-09265103", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265104", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-09265104", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265105", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265106", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-09265106", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-09265109", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T09:26:51+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-09265109", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:29:08+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290801", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T10:29:08+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10290801", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:29:08+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290802", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10290802", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290903", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10290903", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290904", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10290904", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290905", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290906", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10290906", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10290909", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:29:09+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10290909", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:48:42+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484201", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T10:48:42+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10484201", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:48:42+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484202", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10484202", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484303", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10484303", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484304", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10484304", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484305", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484306", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10484306", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10484309", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:48:43+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10484309", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:53:36+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533601", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T10:53:36+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10533601", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:53:36+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533602", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10533602", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533703", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10533703", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533704", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10533704", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533705", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533706", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10533706", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10533709", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:53:37+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10533709", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:55:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554301", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T10:55:43+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10554301", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:55:43+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554302", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10554302", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554403", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10554403", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554404", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10554404", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554405", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554406", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10554406", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-10554409", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T10:55:44+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-10554409", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:00:06+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000601", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T11:00:06+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11000601", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:00:06+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000602", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11000602", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000703", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11000703", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000704", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11000704", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000705", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000706", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:00:07+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11000706", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:00:08+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11000809", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:00:08+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11000809", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:04:46+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044601", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T11:04:46+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11044601", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:04:46+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044602", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11044602", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044703", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11044703", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044704", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11044704", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044705", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044706", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11044706", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11044709", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:04:47+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11044709", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:11:56+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115601", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T11:11:56+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11115601", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:11:56+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115602", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11115602", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115703", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11115703", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115704", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11115704", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115705", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115706", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11115706", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11115709", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:11:57+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11115709", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:18:31+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183101", "level": "P1", "question": "选择实现方案"}}
+{"ts": "2026-11-17T11:18:31+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11183101", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:18:31+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183102", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:18:32+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11183102", "choice": "B", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:18:32+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183203", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:18:32+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11183203", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:18:32+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183204", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:18:32+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11183204", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:18:33+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183305", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:18:33+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183306", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:18:33+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11183306", "choice": "A", "comment": "", "user": "u1"}}
+{"ts": "2026-11-17T11:18:33+08:00", "task": "3413", "action": "human_decision.create", "detail": {"decision_id": "DEC-3413-11183309", "level": "P2", "question": "q"}}
+{"ts": "2026-11-17T11:18:33+08:00", "task": "3413", "action": "human_decision.reply", "detail": {"decision_id": "DEC-3413-11183309", "choice": "A", "comment": "", "user": "u1"}}

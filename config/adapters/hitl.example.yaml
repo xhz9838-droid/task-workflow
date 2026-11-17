@@ -8,7 +8,7 @@ human_decision:
   # 单聊（dingtalk:d:）中会话主人视为授权决策人（best-effort）。
   # 群聊回复在未配置 message.received hook 时无法验证身份，默认拒绝。
   deciders: []
-  #  - user_id: "17248148409976157"
+  #  - user_id: "${YOUR_DINGTALK_USER_ID}"
   #    name: "示例用户"
   any_private_chat_user: true
 

@@ -417,6 +417,68 @@ def _monitor_list(state: StateManager, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --------------------------------------------------------------- waiting（T12）
+def _cmd_waiting(args: argparse.Namespace) -> int:
+    """列出等待人工决策的任务（HITL WAITING_HUMAN / 决策 WAITING_REPLY）。"""
+    state = StateManager(args.db)
+    try:
+        recs = [e for e in state.list_executions(args.project)
+                if str(e.get("workflow_status")) == "WAITING_HUMAN"]
+        # 同时查 HITL 决策层
+        hitl_waiting = []
+        try:
+            from human_decision.decision_store import DecisionStore
+            hs = DecisionStore()
+            hitl_waiting = [d.to_dict() if hasattr(d, "to_dict") else d for d in hs.list_waiting()]
+        except Exception:
+            pass
+
+        if args.json:
+            import json
+            print(json.dumps({"tasks": recs, "hitl_decisions": hitl_waiting},
+                             ensure_ascii=False, indent=2, default=str))
+            return EXIT_OK
+        if not recs and not hitl_waiting:
+            log("无等待人工决策的任务")
+            return EXIT_OK
+        if recs:
+            log(f"任务级 WAITING_HUMAN（{len(recs)} 条）:")
+            log(table([[str(e.get("id", "")), f"{e.get('project_key')}/{e.get('task_id')}",
+                        truncate(str(e.get("current_stage", "")), 20)] for e in recs],
+                      ["id", "task", "stage"]))
+        if hitl_waiting:
+            log("")
+            log(f"HITL 决策等待（{len(hitl_waiting)} 条）:")
+            log(table([[str(d.get("decision_id", "")), str(d.get("task_id", "")),
+                        truncate(str(d.get("question", "")), 30)] for d in hitl_waiting],
+                      ["decision_id", "task", "question"]))
+        return EXIT_OK
+    finally:
+        state.close()
+
+
+def _cmd_failures(args: argparse.Namespace) -> int:
+    """列出失败任务及原因（T12）。"""
+    state = StateManager(args.db)
+    try:
+        recs = [e for e in state.list_executions(args.project)
+                if str(e.get("workflow_status")) in ("FAILED", "BLOCKED")]
+        if args.json:
+            import json
+            print(json.dumps(recs, ensure_ascii=False, indent=2, default=str))
+            return EXIT_OK
+        if not recs:
+            log("无失败任务")
+            return EXIT_OK
+        log(f"失败/阻塞任务（{len(recs)} 条）:")
+        log(table([[str(e.get("id", "")), f"{e.get('project_key')}/{e.get('task_id')}",
+                    str(e.get("workflow_status", "")), truncate(str(e.get("error_message", "")), 40)]
+                   for e in recs], ["id", "task", "status", "error"]))
+        return EXIT_OK
+    finally:
+        state.close()
+
+
 # --------------------------------------------------------------- 摘要
 def _print_summary(state: StateManager, eid: int, as_json: bool) -> None:
     events = state.get_events(eid)
@@ -473,6 +535,16 @@ def build_runner_parser() -> argparse.ArgumentParser:
     pl.add_argument("--project", default=None)
     _add_common(pl)
 
+    # waiting（T12：等待人工决策的任务）
+    pw = sub.add_parser("waiting", help="列出等待人工决策的任务")
+    pw.add_argument("--project", default=None)
+    _add_common(pw)
+
+    # failures（T12：最近失败原因）
+    pf = sub.add_parser("failures", help="列出失败任务及原因")
+    pf.add_argument("--project", default=None)
+    _add_common(pf)
+
     return p
 
 
@@ -503,6 +575,8 @@ def runner_main(argv: Optional[list[str]] = None) -> int:
             "status": _cmd_status,
             "history": _cmd_history,
             "list": _cmd_list,
+            "waiting": _cmd_waiting,
+            "failures": _cmd_failures,
         }[args.command](args)
     except KeyboardInterrupt:
         err("已中断")
