@@ -168,6 +168,80 @@ def _now() -> str:
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+# ------------------------------------------------------- schema 版本与迁移
+SCHEMA_VERSION = 1
+
+
+class MigrationError(Exception):
+    """Schema 迁移失败：库保持原状（事务回滚），须人工处理，不得删除重建。"""
+
+
+def _migrate_to_v1(conn: sqlite3.Connection) -> None:
+    """v0（未版本化）→ v1：基线化当前 schema。全部表已由 SCHEMA 的
+    CREATE TABLE IF NOT EXISTS 保证，本步不改表结构，只落版本号。"""
+
+
+# 版本 → 迁移步骤（升级到该版本需执行）。步骤必须幂等、可事务回滚。
+MIGRATIONS: dict[int, "callable"] = {
+    1: _migrate_to_v1,
+}
+
+
+def _backup_db(db_path: str) -> str | None:
+    """迁移前备份（数据保护）：复制为 <db>.bak-v<cur>-<ts>。内存库跳过。"""
+    if not db_path or db_path == ":memory:" or not os.path.exists(db_path):
+        return None
+    ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    cur_v = 0
+    try:
+        c = sqlite3.connect(db_path)
+        cur_v = c.execute("PRAGMA user_version").fetchone()[0]
+        c.close()
+    except Exception:
+        pass
+    bak = "%s.bak-v%d-%s" % (db_path, cur_v, ts)
+    import shutil
+
+    shutil.copy2(db_path, bak)
+    return bak
+
+
+def migrate(conn: sqlite3.Connection, db_path: str = "") -> dict:
+    """幂等执行 schema 迁移。返回 {from_version, to_version, executed, backup}。
+
+    - 重复启动：已是目标版本则不动（不重复执行已完成的迁移）
+    - 旧库（user_version=0）：正常升级，**不删除、不清空任何既有记录**
+    - 失败：版本号不推进、抛 MigrationError 明确报告；步骤内 DML 变更事务回滚。
+      注意：sqlite3 legacy 事务模式下 DDL（CREATE/ALTER）隐式提交无法回滚，
+      DDL 变更的恢复依赖迁移前自动备份（.bak-v<cur>-<ts>）
+    - 高于程序支持版本：拒绝降级运行
+    """
+    cur = conn.execute("PRAGMA user_version").fetchone()[0]
+    start = cur
+    if cur == SCHEMA_VERSION:
+        return {"from_version": cur, "to_version": cur, "executed": [], "backup": None}
+    if cur > SCHEMA_VERSION:
+        raise MigrationError(
+            "数据库 schema 版本 %d 高于程序支持的 %d，拒绝降级运行（不修改库）" % (cur, SCHEMA_VERSION))
+    executed: list[int] = []
+    backup = _backup_db(db_path) if db_path else None
+    for target in sorted(MIGRATIONS):
+        if target <= cur:
+            continue
+        try:
+            with conn:  # 事务：失败自动回滚
+                MIGRATIONS[target](conn)
+                conn.execute("PRAGMA user_version=%d" % target)
+        except MigrationError:
+            raise
+        except Exception as e:
+            raise MigrationError(
+                "迁移到 v%d 失败（版本未推进，DML 已回滚，库保持 v%d 原状）: %s" % (target, cur, e)) from e
+        executed.append(target)
+        cur = target
+    return {"from_version": start, "to_version": cur, "executed": executed, "backup": backup}
+
+
 class StateManager:
     """SQLite 状态管理。线程安全（threading.Lock + WAL）。"""
 
@@ -179,6 +253,7 @@ class StateManager:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
         self._conn.commit()
+        self.last_migration = migrate(self._conn, self.db_path)
 
     def close(self) -> None:
         with self._lock:

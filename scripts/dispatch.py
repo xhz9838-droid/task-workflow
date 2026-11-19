@@ -95,6 +95,7 @@ def _node_status_from_dispatch(disp: dict | None) -> str:
         NodeState.BLOCKED.value: "blocked",
         NodeState.RETRY_PENDING.value: "retry_pending",
         NodeState.UNVERIFIED.value: "unverified",
+        NodeState.WAITING_HUMAN.value: "waiting_human",
     }
     return m.get(disp["status"], disp["status"])
 
@@ -155,6 +156,8 @@ def cmd_plan(args) -> int:
                 in_progress.append({"node": n["id"], "agent": n.get("agent"), "status": nstat,
                                     "attempt_id": disp["attempt_id"] if disp else None})
                 continue
+            if nstat == "waiting_human":
+                blocked.append({"node": n["id"], "reason": "等待人工决策"})
             if nstat == "blocked":
                 blocked.append({"node": n["id"], "reason": "node BLOCKED"})
                 continue
@@ -480,7 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     srr.add_argument("--node", required=True)
     srr.add_argument("--attempt", required=True)
     srr.add_argument("--status", required=True,
-                     choices=["DONE", "FAILED", "BLOCKED", "UNVERIFIED"])
+                     choices=["DONE", "FAILED", "BLOCKED", "UNVERIFIED", "WAITING_HUMAN"])
     srr.add_argument("--error-code", default="")
     srr.add_argument("--error", default="")
     srr.set_defaults(func=cmd_record_result)

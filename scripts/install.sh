@@ -8,7 +8,7 @@
 # 原则：
 #   - 不破坏用户已有的个人 Skill / Agent（只写本工作流的文件名）
 #   - 已存在同名用户文件 → 备份为 .bak.<时间戳> 后覆盖，并提示
-#   - 开发源始终在 {WORKFLOW_HOME}/.claude/skills/zentao-dev-workflow/
+#   - 开发源在 {WORKFLOW_HOME}/skill/ + {WORKFLOW_HOME}/agents/（兼容旧 .claude/skills/ 布局）
 
 set -euo pipefail
 
@@ -98,13 +98,21 @@ do_install() {
 }
 
 # 工作流根安装记录：Skill 从任意目录启动时按此定位 config/ 与 execution/（见 scripts/_home.py）
+# .home 只应指向"数据运行时根"（本脚本所在仓库，run-in-place）。若已有 .home 指向别处，
+# 覆盖前告警，避免把公司发行仓库误当运行时（P0-2 req 5）。
 write_install_record() {
   local record="$USER_CLAUDE/zentao-dev-workflow.home"
   # pwd -W：Git Bash 下写 Windows 原生路径（/d/... 形式 Windows Python 无法解析）
   local native
   native="$(cd "$WORKFLOW_HOME" && pwd -W 2>/dev/null)" || native="$WORKFLOW_HOME"
+  if [[ -s "$record" ]]; then
+    local prev; prev="$(head -n1 "$record")"
+    if [[ "$prev" != "$native" ]]; then
+      echo "  ⚠ 工作流根由 $prev 变更为 $native——确认这是数据运行时根（含 config/.env/execution），而非公司发行仓库。"
+    fi
+  fi
   printf '%s\n' "$native" > "$record"
-  echo "  ✓ 工作流根安装记录 → $record"
+  echo "  ✓ 工作流根安装记录 → $record ($native)"
 }
 
 do_uninstall() {

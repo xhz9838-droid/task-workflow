@@ -16,8 +16,9 @@ zentao:
   # 写入策略（硬约束）
   write_guard: true
   progress_mode: append                  # 追加，不覆盖原文
-  allow_finish: human_only               # 仅本人确认后
-  allow_close: never                     # 永不自动 close
+  # auto_after_gate = 允许自动；manual_only = 可选收紧为本人手动。
+  allow_finish: auto_after_gate          # doing→done：Verifier 验收通过后自动
+  allow_close: auto_after_gate           # done→closed：关闭条件满足后自动
 
   # 身份核验
   verify_owner: true

@@ -200,6 +200,16 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
         else:
             _ud = _read_yaml(u_path)
             merged = _deep_merge(merged, _ud if "user" in _ud else {"user": _ud})
+            # 通知配置合并：用户级 notification.enabled=true 时，若项目级 notification="none" 则升级
+            # 优先级：用户显式开启 > 项目禁用（用户覆盖率 > 项目默认关闭）
+            user_notif = _ud.get("notification", {}) if isinstance(_ud, dict) else {}
+            if user_notif and user_notif.get("enabled") in (True, "true"):
+                proj_int = merged.get("project", {}).get("integrations", {}) if isinstance(merged.get("project"), dict) else {}
+                if proj_int.get("notification") in (None, "none", ""):
+                    proj_notif_provider = user_notif.get("provider") or user_notif.get("type") or "dingtalk"
+                    if "integrations" not in merged.setdefault("project", {}):
+                        merged["project"]["integrations"] = {}
+                    merged["project"]["integrations"]["notification"] = proj_notif_provider
 
     # 5) 环境变量替换
     merged = _substitute(merged, env_full, "config")

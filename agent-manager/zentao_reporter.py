@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
-"""P11 Phase 4 — ZenTao Reporter：禅道进度/结果回写。
+"""ZenTao Reporter：禅道进度/结果回写。
 
-**复用现有 ZenTao 适配器**（`scripts/zt.py` + `~/.claude/skills/zentao-tasks`）。
-**不新建第二套 ZenTao Client**。
+复用现有 ZenTao 适配器（`scripts/zt.py` + `~/.claude/skills/zentao-tasks`）。
+不新建第二套 ZenTao Client。
 
-约束（P11 §七）：
+约束：
     - 更新保留原任务描述（追加，不覆盖）
     - 不覆盖原有备注或他人信息
     - 不伪造工时/完成日期
-    - 遵循状态流转：wait→doing 须满足必填字段；doing→done 须钉钉人工确认
-    - task_finish（doing→done）：Verifier 质量门禁通过后**允许自动**执行
-    - task_close（→closed）：**始终禁止**自动执行
-    - **写入后必须读回禅道状态确认结果**
+    - 遵循状态流转：wait→doing 须满足必填字段
+    - task_finish（doing→done）：Verifier 门禁通过后自动执行，读回确认
+    - task_close（done→closed）：关闭条件满足后自动执行，读回确认；不满足暂缓并记录原因
+    - finish 与 close 记录任务 ID、执行 ID、前后状态、结果与失败原因
+    - 写入后必须读回禅道状态确认结果
     - 回写失败保存待写事件，不丢执行结果
-    - 重试回写避免重复追加相同记录
+    - 重试回写避免重复追加相同记录（幂等）
     - 回写后读回核验
 """
 from __future__ import annotations
@@ -162,9 +163,7 @@ class ZenTaoReporter:
                    consumed=None, left=None) -> tuple[bool, str]:
         """doing→done 前置检查。
 
-        授权策略（2026-11-16 更新）：
-            Verifier 质量门禁通过 → **允许自动 task_finish**
-            未经门禁 → 仍需人工确认
+        门禁通过 → 自动执行；未经门禁 → 需人工确认。
         """
         if not verifier_passed and not human_confirmed:
             return False, "Verifier 质量门禁未通过且无人工确认，不执行 task_finish"
@@ -172,9 +171,21 @@ class ZenTaoReporter:
             return False, "consumed/left 未提供，不推算工时"
         return True, ""
 
-    def can_close(self) -> tuple[bool, str]:
-        """done→closed 检查。**始终禁止自动执行**。"""
-        return False, "禁止自动 task_close：终态关闭须由本人在禅道手动操作"
+    def can_close(self, *, task_detail: dict | None = None, verifier_passed: bool = False,
+                  deliverables_ok: bool = True, records_ok: bool = True) -> tuple[bool, str]:
+        """done→closed 关闭条件判断。"""
+        status = str((task_detail or {}).get("status") or "").lower()
+        if status == "closed":
+            return True, "已 closed（幂等，可跳过）"
+        if status != "done":
+            return False, f"禅道状态 {status or '未知'} 非 done，不满足关闭条件（仅 done→closed）"
+        if not verifier_passed:
+            return False, "Verifier 验收未通过，暂缓关闭"
+        if not deliverables_ok:
+            return False, "存在未完成的交付要求，暂缓关闭"
+        if not records_ok:
+            return False, "必要记录缺失，暂缓关闭"
+        return True, ""
 
     # ------------------------------------------------------- 状态流转执行
     def finish(
@@ -188,13 +199,14 @@ class ZenTaoReporter:
         finished_date: str | None = None,
         real_started: str | None = None,
         human_confirmed: bool = False,
+        exec_id: str = "",
     ) -> dict:
         """执行 task_finish（doing→done）+ **读回确认**。
 
         - 仅在 Verifier 门禁通过（或人工确认）后执行
         - 工时/日期不推算：consumed/left/finished_date 必须由调用方提供
         - 写入后**必须读回禅道状态确认结果**
-        - 不执行 task_close
+        - 与 close 相互独立（finish 与 close 是两个不同生命周期操作）
         """
         ok, reason = self.can_finish(
             verifier_passed=verifier_passed,
@@ -211,9 +223,10 @@ class ZenTaoReporter:
         payload = {
             "consumed": consumed,
             "left": left,
-            "finishedDate": finished_date,
-            "realStarted": real_started,
+            "finished_date": finished_date,
+            "real_started": real_started,
             "verifier_passed": verifier_passed,
+            "exec_id": exec_id,
         }
 
         if self.dry_run:
@@ -224,6 +237,7 @@ class ZenTaoReporter:
             "finish", "--task", str(task_id),
             "--consumed", str(consumed), "--left", str(left),
             "--finishedDate", finished_date,
+            "--exec-id", exec_id or "",
         ]
         if real_started:
             args += ["--realStarted", real_started]
@@ -252,12 +266,77 @@ class ZenTaoReporter:
             self._log(f"⚠ task_finish 后读回 status={status}（期望 done）")
         return result
 
-    def close_blocked(self, task_id: str = "") -> dict:
-        """明确记录：不执行 task_close。"""
+    def close(
+        self,
+        *,
+        task_id: str,
+        project_key: str,
+        comment: str,
+        verifier_passed: bool = False,
+        deliverables_ok: bool = True,
+        records_ok: bool = True,
+        exec_id: str = "",
+        task_detail: dict | None = None,
+    ) -> dict:
+        """满足关闭条件后自动执行 task_close（done→closed）+ **读回确认**。
+
+        满足关闭条件后自动执行 close + 读回确认。条件不满足则暂缓并记录原因。失败入待写队列重试。
+        """
+        detail = task_detail if task_detail is not None else self.get_task(task_id)
+        ok, reason = self.can_close(
+            task_detail=detail,
+            verifier_passed=verifier_passed,
+            deliverables_ok=deliverables_ok,
+            records_ok=records_ok,
+        )
+        if not ok:
+            return self.close_deferred(task_id=task_id, project_key=project_key, reason=reason)
+
+        payload = {"comment": comment, "verifier_passed": verifier_passed,
+                   "deliverables_ok": deliverables_ok, "records_ok": records_ok,
+                   "before": str(detail.get("status") or "").lower()}
+
+        if self.dry_run:
+            self._log(f"[dry-run] task_close task={task_id}")
+            return {"ok": True, "dry_run": True, "payload": payload}
+
+        try:
+            out = self._run_zt(
+                ["close", "--task", str(task_id), "--comment", comment, "--exec-id", exec_id or ""],
+                timeout=120,
+            )
+        except Exception as e:
+            self._enqueue(task_id, project_key, "close", payload, str(e))
+            raise ZenTaoWriteError(f"task_close 失败（已存待写队列）: {e}")
+
+        # **读回确认**：必须核实 status 已变 closed
+        try:
+            after = self.get_task(task_id)
+        except Exception as e:
+            self._enqueue(task_id, project_key, "close", payload, f"读回失败: {e}")
+            return {"ok": False, "reason": f"close 已调用但读回失败: {e}", "stage": "readback"}
+
+        status = str(after.get("status", "")).lower()
+        confirmed = status == "closed"
+        result = {
+            "ok": confirmed,
+            "status_after": status,
+            "confirmed": confirmed,
+            "output_tail": out[-200:],
+            "payload": payload,
+        }
+        if not confirmed:
+            self._log(f"⚠ task_close 后读回 status={status}（期望 closed）")
+        return result
+
+    def close_deferred(self, *, task_id: str, project_key: str = "", reason: str = "") -> dict:
+        """关闭条件不满足 → 暂缓关闭并记录具体原因（不视为失败，不伪造成功）。"""
+        self._log(f"暂缓关闭 task={task_id}: {reason}")
         return {
             "ok": False,
-            "reason": "禁止自动 task_close",
-            "note": f"任务 {task_id} 的终态关闭须由本人在禅道手动操作",
+            "deferred": True,
+            "reason": reason or "关闭条件未满足",
+            "note": f"任务 {task_id} 暂缓关闭，条件满足后可重试",
         }
 
     # ------------------------------------------------------- 内部
@@ -286,21 +365,45 @@ class ZenTaoReporter:
             self._log(f"已存待写队列: task={task_id} action={action} err={error[:80]}")
 
     def flush_pending(self, task_id: str | None = None) -> dict:
-        """重试待写队列。避免重复追加相同记录（用 stage 标记幂等）。"""
+        """重试待写队列。避免重复追加相同记录（用 stage 标记幂等）；
+        finish/close 由 zt.py 层幂等（已 done/closed 跳过），不产生重复流转。"""
         if not self.state:
             return {"flushed": 0, "note": "no state manager"}
         items = self.state.get_pending_writes(task_id)
         ok = fail = 0
         for w in items:
             payload = w.get("payload") or {}
+            action = str(w.get("action") or "progress")
             try:
-                self.report_progress(
-                    task_id=w["task_id"],
-                    project_key=w.get("project_key", ""),
-                    stage=payload.get("stage", "retry"),
-                    text=payload.get("text", ""),
-                    attempt=int(w.get("attempts", 0)) + 1,
-                )
+                if action == "finish":
+                    self.finish(
+                        task_id=w["task_id"],
+                        project_key=w.get("project_key", ""),
+                        verifier_passed=bool(payload.get("verifier_passed", True)),
+                        consumed=payload.get("consumed"),
+                        left=payload.get("left"),
+                        finished_date=payload.get("finished_date"),
+                        real_started=payload.get("real_started"),
+                        exec_id=str(payload.get("exec_id") or ""),
+                    )
+                elif action == "close":
+                    self.close(
+                        task_id=w["task_id"],
+                        project_key=w.get("project_key", ""),
+                        comment=payload.get("comment", ""),
+                        verifier_passed=bool(payload.get("verifier_passed", True)),
+                        deliverables_ok=bool(payload.get("deliverables_ok", True)),
+                        records_ok=bool(payload.get("records_ok", True)),
+                        exec_id=str(payload.get("exec_id") or ""),
+                    )
+                else:
+                    self.report_progress(
+                        task_id=w["task_id"],
+                        project_key=w.get("project_key", ""),
+                        stage=payload.get("stage", "retry"),
+                        text=payload.get("text", ""),
+                        attempt=int(w.get("attempts", 0)) + 1,
+                    )
                 self.state.mark_write_done(w["id"])
                 ok += 1
             except Exception as e:

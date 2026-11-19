@@ -69,17 +69,19 @@ class NodeState(str, Enum):
     BLOCKED = "BLOCKED"
     RETRY_PENDING = "RETRY_PENDING"
     UNVERIFIED = "UNVERIFIED"
+    WAITING_HUMAN = "WAITING_HUMAN"
 
 
 # NodeState 合法状态转换（from -> {允许的 to}）。校验在 StateManager.assert_node_transition。
 _NODE_TRANSITIONS: dict[NodeState, frozenset[NodeState]] = {
     NodeState.PENDING: frozenset({NodeState.DISPATCHING}),
     NodeState.DISPATCHING: frozenset({NodeState.RUNNING, NodeState.FAILED, NodeState.UNVERIFIED}),
-    NodeState.RUNNING: frozenset({NodeState.DONE, NodeState.FAILED, NodeState.BLOCKED, NodeState.UNVERIFIED}),
+    NodeState.RUNNING: frozenset({NodeState.DONE, NodeState.FAILED, NodeState.BLOCKED, NodeState.UNVERIFIED, NodeState.WAITING_HUMAN}),
     NodeState.FAILED: frozenset({NodeState.RETRY_PENDING}),
     NodeState.RETRY_PENDING: frozenset({NodeState.DISPATCHING, NodeState.BLOCKED}),
     NodeState.BLOCKED: frozenset({NodeState.DISPATCHING, NodeState.FAILED}),
     NodeState.UNVERIFIED: frozenset({NodeState.DISPATCHING, NodeState.DONE, NodeState.FAILED}),
+    NodeState.WAITING_HUMAN: frozenset({NodeState.DISPATCHING, NodeState.DONE, NodeState.FAILED}),
     NodeState.DONE: frozenset(),  # 终态
 }
 
@@ -87,6 +89,7 @@ _NODE_TRANSITIONS: dict[NodeState, frozenset[NodeState]] = {
 NODE_NON_TERMINAL = {
     NodeState.PENDING, NodeState.DISPATCHING, NodeState.RUNNING,
     NodeState.FAILED, NodeState.BLOCKED, NodeState.RETRY_PENDING, NodeState.UNVERIFIED,
+    NodeState.WAITING_HUMAN,
 }
 
 
@@ -271,6 +274,25 @@ class VerifyReport:
         else:
             self.overall = "NOT_RUN"
         return self.overall
+
+    def passed(self) -> tuple[bool, str]:
+        """验收判定（Verifier 是任务完成的唯一判定依据；Agent 进程退出码不参与）。
+
+        - 任何 FAIL / BLOCKED → 不通过
+        - Git 校验必须 PASS（require_commit 语义）
+        - 至少一项真实 PASS 证据；NOT_RUN/SKIPPED 不算成功
+        未提供的 requirement_checks（NOT_RUN）不阻塞——那是"未提供检查项"而非"检查未通过"。
+        """
+        statuses = [self.git_status, self.requirements_status, *self.tests.values()]
+        if any(s == VerifyStatus.FAIL for s in statuses):
+            return False, "存在 FAIL 验收项"
+        if self.blocked_summary:
+            return False, "存在 BLOCKED 项: %s" % self.blocked_summary
+        if self.git_status != VerifyStatus.PASS:
+            return False, "Git 校验未通过: %s" % self.git_status.value
+        if not any(s == VerifyStatus.PASS for s in statuses):
+            return False, "无任何 PASS 验收证据"
+        return True, self.compute_overall()
 
     def to_dict(self) -> dict:
         return {

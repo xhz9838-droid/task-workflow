@@ -135,11 +135,115 @@ def _cmd_run(args: argparse.Namespace) -> int:
             _print_summary(state, eid, args.json)
             return EXIT_OK
 
-        # 6) 真实启动（复用 AgentRunner）
-        from runner import AgentRunner  # 延迟导入，避免 dry-run 也要建进程管理器
-
+        # 6-9) Agent 执行（含自动重试）+ Verifier 验收
+        #      五状态分离：Agent 进程/执行状态 ≠ 验收状态 ≠ 工作流状态 ≠ 外部回写状态；
+        #      Agent exit code 0 只代表进程正常退出，**不直接认定任务完成**（须 Verifier）。
         workdir = args.workdir or os.getcwd()
         prompt = args.prompt or f"/zentao-dev-workflow {project} {task}"
+        notifier = _build_notifier(cfg, state, args)
+        agent_state, exit_code, report, attempt = _execute_with_retry(
+            args, cfg, state, notifier, eid, project, task, decision, workdir, prompt,
+        )
+        agent_ok = agent_state == AgentState.SUCCEEDED
+        v_ok, v_reason = report.passed()
+
+        if not (agent_ok and v_ok):
+            # 终态失败：验收失败/执行失败/重试超限。状态持久化 + 通知，上下文不丢。
+            state.update_execution(
+                eid,
+                workflow_status=TaskState.FAILED,
+                current_stage="finished",
+                finished_at=_now(),
+                result=f"agent={agent_state.value};verify={report.overall}",
+                error_message=(v_reason or f"exit={exit_code}")[:300],
+                retry_count=attempt - 1,
+            )
+            state.log_event(eid, "status_snapshot",
+                            _status_snapshot(agent_state, exit_code, report, attempt,
+                                             "none", TaskState.FAILED.value))
+            state.log_event(eid, "cli_run_finished",
+                            {"state": agent_state.value, "exit_code": exit_code,
+                             "verify": report.overall, "attempt": attempt})
+            _print_summary(state, eid, args.json)
+            return EXIT_FAILED
+
+        # 10) 工作流完成（Workflow Status）：Verifier 通过是唯一完成判定依据
+        state.update_execution(
+            eid,
+            workflow_status=TaskState.COMPLETED,
+            current_stage="verified",
+            finished_at=_now(),
+            result=f"agent={agent_state.value};verify={report.overall}",
+            retry_count=attempt - 1,
+        )
+
+        # 11) 外部回写：Verifier 通过后自动 finish/done，失败入待写队列。
+        provider_status = "skipped"
+        if args.zentao_finish:
+            provider_status = _zentao_finish_with_notify(args, state, notifier, eid, project, task)
+
+        state.log_event(eid, "status_snapshot",
+                        _status_snapshot(agent_state, exit_code, report, attempt,
+                                         provider_status, TaskState.COMPLETED.value))
+        state.log_event(eid, "cli_run_finished",
+                        {"state": agent_state.value, "exit_code": exit_code,
+                         "verify": report.overall, "attempt": attempt})
+        notifier.final_success(project_key=project, task_id=task,
+                               task_level=decision.task_level.value,
+                               summary=f"验收通过 {report.overall}", commit=report.commit)
+        _print_summary(state, eid, args.json)
+        return EXIT_OK
+
+    finally:
+        state.close()
+
+
+# --------------------------------------------------------------- 执行编排辅助
+def _build_notifier(cfg: dict, state: StateManager, args: argparse.Namespace):
+    """通知器：配置 notification.enabled 且未 --no-notify 时启用；通知失败不阻塞任务。"""
+    from notifier import Notifier
+
+    enabled = bool((cfg.get("notification", {}) or {}).get("enabled", True)) and not args.no_notify
+    return Notifier(
+        enabled=enabled,
+        state=state,
+        dry_run=bool(getattr(args, "dry_run", False)),
+        logger=(lambda m: None if args.quiet else log),
+    )
+
+
+def _status_snapshot(agent_state: "AgentState", exit_code, report, attempt: int,
+                     provider_status: str, workflow_status: str) -> dict:
+    """五状态分离快照：Agent 进程 / Agent 执行 / 验收 / 工作流 / 外部 Provider。"""
+    return {
+        "agent_process_status": f"exit={exit_code}",
+        "agent_execution_status": agent_state.value,
+        "verification_status": report.overall,
+        "workflow_status": workflow_status,
+        "external_provider_status": provider_status,
+        "attempt": attempt,
+    }
+
+
+def _execute_with_retry(args, cfg, state, notifier, eid, project, task, decision,
+                        workdir: str, prompt: str):
+    """Agent 执行 + Verifier 验收 + 自动重试循环。
+
+    返回 (agent_state, exit_code, verify_report, attempt)。
+    - Agent 进程成功 ≠ 任务完成：必须经 Verifier 判定
+    - 失败经 RetryManager 分类决策（TRANSIENT 重试 / PERMANENT 交回 / HUMAN 中止）
+    - 每次决策持久化到 execution_events；超过重试上限通知用户后终止
+    """
+    import time
+
+    from retry import RetryManager, RetryPolicy
+    from runner import AgentRunner
+    from verifier import Verifier
+
+    retry_mgr = RetryManager(RetryPolicy.from_config(cfg))
+    attempt = 0
+    while True:
+        attempt += 1
         runner = AgentRunner(state, logger=(lambda m: None if args.quiet else log))
         try:
             agent_run = runner.start(
@@ -149,45 +253,111 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 workdir=workdir,
                 execution_id=eid,
                 agent_name="main",
-                session_id=args.session_id,
+                session_id=args.session_id or None,
                 timeout_seconds=decision.execution_budget_seconds,
+                attempt=attempt,
             )
         except Exception as e:
-            state.update_execution(
-                eid, workflow_status=TaskState.FAILED, finished_at=_now(), error_message=str(e)[:300]
-            )
-            state.log_event(eid, "cli_run_start_failed", {"error": str(e)[:200]})
-            err(f"启动失败: {e}")
-            return EXIT_FAILED
+            state.log_event(eid, "cli_run_start_failed", {"error": str(e)[:200], "attempt": attempt})
+            notifier.agent_start_failed(project_key=project, task_id=task,
+                                        task_level=decision.task_level.value,
+                                        summary=str(e)[:200])
+            raise
+        if attempt == 1:
+            notifier.task_started(project_key=project, task_id=task,
+                                  task_level=decision.task_level.value, stage="run")
+        if not args.quiet:
+            log(f"已启动 pid={agent_run.pid} attempt={attempt} workdir={workdir}")
+
+        agent_state, exit_code, err_msg = AgentState.FAILED, None, ""
+        try:
+            agent_state, exit_code = runner.wait(timeout_seconds=decision.execution_budget_seconds)
+        except Exception as e:
+            err_msg = str(e)[:300]
+            is_timeout = "超时" in err_msg or "timeout" in err_msg.lower()
+            agent_state = AgentState.TIMEOUT if is_timeout else AgentState.FAILED
+            if is_timeout:
+                notifier.agent_timeout(project_key=project, task_id=task,
+                                       task_level=decision.task_level.value, summary=err_msg)
+            else:
+                notifier.agent_crashed(project_key=project, task_id=task,
+                                       task_level=decision.task_level.value, summary=err_msg)
+
+        # 验收（Verification Status）：Verifier 是任务完成的唯一判定依据
+        state.update_execution(eid, current_stage="verifying")
+        report = Verifier(workdir=workdir).verify(require_commit=True)
+        state.save_verification(eid, report.checks)
+        v_ok, v_reason = report.passed()
+        state.log_event(eid, "verification",
+                        {"overall": report.overall, "passed": v_ok, "reason": v_reason})
+        if not args.quiet:
+            log(f"验收: overall={report.overall} passed={v_ok}（{v_reason}）")
+
+        agent_ok = agent_state == AgentState.SUCCEEDED and not err_msg
+        if agent_ok and v_ok:
+            return agent_state, exit_code, report, attempt
+
+        # 失败 → RetryManager 决策（含副作用检查：已 commit 不盲目重试）
+        error = err_msg or f"agent_state={agent_state.value} exit={exit_code} verify={report.overall}"
+        precheck = {"already_committed": bool(report.commit)}
+        action, delay, rec = retry_mgr.decide(attempt=attempt, error=error, precheck=precheck)
+        state.log_event(eid, "retry_decision", rec.to_dict())
+
+        if not agent_ok and agent_state == AgentState.TIMEOUT:
+            pass  # 已通知
+        elif agent_ok and not v_ok:
+            notifier.qa_failed(project_key=project, task_id=task,
+                               task_level=decision.task_level.value, summary=v_reason[:200])
+        if action != "retry":
+            if action == "abort":
+                notifier.final_failure(project_key=project, task_id=task,
+                                       task_level=decision.task_level.value,
+                                       summary=f"重试终止: {rec.reason[:200]}")
+            else:  # hand_to_main
+                notifier.human_needed(project_key=project, task_id=task,
+                                      task_level=decision.task_level.value,
+                                      summary=f"需人工介入: {rec.reason[:200]}")
+            return agent_state, exit_code, report, attempt
 
         if not args.quiet:
-            log(f"已启动 pid={agent_run.pid} workdir={workdir}")
+            log(f"自动重试 {attempt}→{attempt + 1}（{rec.reason[:80]}），退避 {delay:.0f}s")
+        notifier.auto_retry(project_key=project, task_id=task,
+                            task_level=decision.task_level.value,
+                            summary=f"第 {attempt} 次失败自动重试: {rec.reason[:160]}")
+        state.update_execution(eid, retry_count=attempt)
+        time.sleep(delay)
 
-        # 7) 等待结束
-        try:
-            final_state, code = runner.wait(timeout_seconds=decision.execution_budget_seconds)
-        except Exception as e:
-            state.update_execution(
-                eid, workflow_status=TaskState.FAILED, finished_at=_now(), error_message=str(e)[:300]
-            )
-            err(f"执行异常: {e}")
-            return EXIT_FAILED
 
-        ok = final_state == AgentState.SUCCEEDED
-        state.update_execution(
-            eid,
-            workflow_status=TaskState.COMPLETED if ok else TaskState.FAILED,
-            current_stage="finished",
-            finished_at=_now(),
-            result=final_state.value,
-            error_message=None if ok else f"exit={code}",
+def _zentao_finish_with_notify(args, state, notifier, eid, project, task) -> str:
+    """Verifier 通过后自动回写禅道 finish/done。工时/日期由调用方提供，失败入待写队列，不改执行结果。
+    """
+    from zentao_reporter import ZenTaoReporter
+
+    if args.consumed is None or args.left is None or not args.finished_date:
+        warn("--zentao-finish 需要 --consumed/--left/--finished-date（不推算工时与日期），本次跳过回写")
+        return "skipped_missing_fields"
+    zr = ZenTaoReporter(state, dry_run=bool(args.dry_run),
+                        logger=(lambda m: None if args.quiet else log))
+    try:
+        r = zr.finish(
+            task_id=task,
+            project_key=project,
+            verifier_passed=True,
+            consumed=args.consumed,
+            left=args.left,
+            finished_date=args.finished_date,
+            real_started=args.real_started or None,
+            exec_id=str(eid),
         )
-        state.log_event(eid, "cli_run_finished", {"state": final_state.value, "exit_code": code})
-        _print_summary(state, eid, args.json)
-        return EXIT_OK if ok else EXIT_FAILED
-
-    finally:
-        state.close()
+        if r.get("ok"):
+            return "success"
+        notifier.zentao_write_failed(project_key=project, task_id=task,
+                                     summary=str(r.get("reason", "读回未确认"))[:200])
+        return "readback_mismatch"
+    except Exception as e:
+        # 失败已入待写队列（flush_pending 可重试）；不伪造成功，不改任务执行结果
+        notifier.zentao_write_failed(project_key=project, task_id=task, summary=str(e)[:200])
+        return "failed_queued"
 
 
 # --------------------------------------------------------------- runner: status
@@ -516,6 +686,13 @@ def build_runner_parser() -> argparse.ArgumentParser:
     pr.add_argument("--static-only", action="store_true", help="仅静态检查（用户指令优先）")
     pr.add_argument("--dry-run", action="store_true", help="Mock 模式：不启动真实开发任务")
     pr.add_argument("--force", action="store_true", help="覆盖重复/已完成检查（谨慎）")
+    pr.add_argument("--zentao-finish", action="store_true",
+                    help="Verifier 通过后自动回写禅道 finish/done（需提供 --consumed/--left/--finished-date）")
+    pr.add_argument("--consumed", type=float, default=None, help="已消耗工时（finish 回写用，不推算）")
+    pr.add_argument("--left", type=float, default=None, help="剩余工时（finish 回写用，不推算）")
+    pr.add_argument("--finished-date", default="", help="实际完成日期 YYYY-MM-DD（finish 回写用）")
+    pr.add_argument("--real-started", default="", help="实际开始日期 YYYY-MM-DD（finish 时回填）")
+    pr.add_argument("--no-notify", action="store_true", help="不发送钉钉通知")
     _add_common(pr)
 
     # status

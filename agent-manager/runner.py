@@ -101,8 +101,9 @@ class AgentRunner:
         session_id: str | None = None,
         timeout_seconds: int = 1800,
         extra_args: list[str] | None = None,
+        attempt: int = 1,
     ) -> AgentRun:
-        """启动一次 Agent 运行。返回 AgentRun（含 PID）。"""
+        """启动一次 Agent 运行。返回 AgentRun（含 PID）。attempt 为重试序号（1 起）。"""
         # 任务锁：同一 task_id 不允许并发
         my_pid = os.getpid()
         if not self.state.acquire_lock(project_key, task_id, my_pid, owner=agent_name):
@@ -127,6 +128,7 @@ class AgentRunner:
             execution_id=execution_id,
             agent_name=agent_name,
             status=AgentState.STARTING,
+            attempt=attempt,
             cmd=" ".join(cmd[:4]) + " …(prompt 经 stdin 传入)",
             workdir=workdir,
         )

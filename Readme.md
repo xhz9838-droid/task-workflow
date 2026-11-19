@@ -42,29 +42,35 @@ bash zentao-dev-workflow/scripts/install.sh
 
 ### 方式 2：用 lianzhu-skills 全局安装脚本
 
-本 skill 尚未接入 `install-global.sh`。如需接入，在 `install-global.sh` 加一段：
+已接入 `install-global.sh`，只装本 skill 不影响其他 skill：
 
 ```bash
-# zentao-dev-workflow
-rm -rf "$SKILLS_DST/zentao-dev-workflow"
-cp -r "$SRC/zentao-dev-workflow/skill" "$SKILLS_DST/zentao-dev-workflow"
-for n in dw-architect dw-database dw-java-backend dw-web-frontend dw-mobile-app dw-qa-engineer dw-integration-reviewer; do
-  cp "$SRC/zentao-dev-workflow/agents/$n.md" "$USER_CLAUDE/agents/$n.md"
-done
+bash install-global.sh --only zentao-dev-workflow   # 在 lianzhu-skills 仓库根执行
 ```
 
-> 工作流根定位：`install.sh` 会写 `~/.claude/zentao-dev-workflow.home`，指向本 skill 所在
-> 仓库（lianzhu-skills）。`config/` 与 `execution/` 需在工作流根下——若只用 skill 本体，
-> `scripts/_home.py` 会探测本目录。**完整运行需把 config/scripts/agent-manager 一并部署**，
-> 否则 dispatch.py/migrate_runstate.py 找不到依赖。
+发行源路径由脚本自身位置推导（无硬编码）；可选 `WORKFLOW_SRC` 显式指定仓库根。
+
+> **工作流根定位**：Skill 入口（`~/.claude/skills/zentao-dev-workflow/`）只含 SKILL.md /
+> references / templates，**不含** `config/`、`execution/`、`.env`、SQLite——这些在**数据运行时根**。
+> 运行时指向由 `~/.claude/zentao-dev-workflow.home` 记录，指向**数据运行时根**（含
+> `config/`+`scripts/`+`execution/`+`.env` 的目录），**不是公司 Git 发行仓库**。
+> `install-global.sh` **只保留既有 `.home`，不代填**；建立运行时指向请在数据运行时根执行
+> `scripts/install.sh`（写 `.home` → 该根），或设 `WORKFLOW_HOME`。缺失时 `_home.py` 会按
+> 环境变量 → 用户配置 → 安装记录 → 开发源 → 向上探测的顺序解析，全落空则明确报错，不猜测。
 
 ## 接入新项目
 
-1. 复制 `config/projects/project.example.yaml` → `config/projects/{key}.yaml`，填项目属性
-2. 复制 `config/users/user.example.yaml` → `config/users/{id}.yaml`，填人员身份
-3. 复制 `.env.example` → `.env`，填机器级凭据（路径/Jenkins/ZenTao）
-4. 运行 `scripts/_config.py validate {key} {user_id}` 校验
-5. 或用 `scripts/project_register.py` 引导式注册（查禅道项目 + 自动识别技术栈）
+两种注册方式（plan→确认→apply，两段式，不重复实现注册逻辑）：
+
+- **手动注册**：`/workflow-register-project` 或 `scripts/project_register.py plan/apply`
+  ——用户给齐 project_key/name/repos，不依赖禅道，适合离线或凭据未配。
+- **任务驱动注册**：`scripts/register_from_task.py plan --task <id> ...`
+  ——已知 task_id 时，自动从禅道任务提取 `project`/`projectName`/`product_ids` 填进计划，
+  用户只补 project_key + 仓库路径。工作流启动时若项目未注册，主控就地调此脚本注册后继续，
+  **不要求用户重启命令**。
+
+前置：复制 `.env.example` → `.env` 填机器级凭据（路径/Jenkins/ZenTao）；
+运行 `scripts/_config.py validate {key} {user_id}` 校验。
 
 接入后任意目录启动 Claude Code：`/zentao-dev-workflow {project_key} {task_id}`
 
@@ -73,8 +79,9 @@ done
 - **不进 git**：`.env`、`config/users/*.yaml`（非 example）、`config/projects/*.yaml`（非 example）、
   `execution/`、`agent-manager/logs/*.db`
 - 凭据只放 `.env`（gitignored）或用户级工具配置
-- 不自动部署、不自动重启、不自动 task_close
-- task_finish 经 Verifier 门禁后可自动（须读回确认）
+- 不自动部署、不自动重启
+- task_finish 经 Verifier 门禁后自动（须读回确认）；task_close 关闭条件满足后自动（须读回确认，
+  不满足则暂缓并记录原因）
 
 ## 关键文档
 

@@ -8,8 +8,8 @@
 
 | 目录 | 职责 | 归属 |
 |---|---|---|
-| `.claude/skills/zentao-dev-workflow/` | 总控 Skill（开发源） | 通用核心 |
-| `.claude/agents/*.md` | 7 个专业 Subagents | 通用核心 |
+| `skill/`（含 SKILL.md / references / templates） | 总控 Skill（开发源，安装到 ~/.claude/skills/） | 通用核心 |
+| `agents/*.md` | 7 个专业 Subagents（安装到 ~/.claude/agents/） | 通用核心 |
 | `config/workflow.yaml` | 全局执行策略 | 通用（无个人/项目信息） |
 | `config/projects/{key}.yaml` | 项目属性：仓库/技术栈/Agent/集成 | 每项目 |
 | `config/users/{id}.yaml` | 人员身份与偏好 | 每人（真实配置 gitignored） |
@@ -21,7 +21,7 @@
 ## 角色
 
 - **Main Agent（本会话）**：唯一协调者。加载项目配置 → 获取任务 → 分派 Subagents → 复核交付 → 更新状态 → 进度回写 → 人工决策协调。
-- **Subagents**：`.claude/agents/*.md`，各自只改自己所有权范围内的文件，返回结构化报告（见下）。
+- **Subagents**：`agents/*.md`，各自只改自己所有权范围内的文件，返回结构化报告（见下）。
 
 ## 业务仓库（按项目配置，主工作区只读）
 
@@ -47,7 +47,7 @@
 
 ## 硬约束
 
-1. **任务系统**：经 `config/adapters/*.yaml` 启用的适配器访问（ZenTao / 其他）。只操作本人任务。字段编辑只用 PUT + 读回核验；进度**追加**不覆盖原文；不编造工时/日期/百分比；状态流转仅经适配器的正式动作端点；`task_finish` 经 Verifier 门禁后可自动执行并读回确认；**`task_close` 始终禁止自动执行**。
+1. **任务系统**：经 `config/adapters/*.yaml` 启用的适配器访问（ZenTao / 其他）。只操作本人任务。字段编辑只用 PUT + 读回核验；进度**追加**不覆盖原文；不编造工时/日期/百分比；状态流转仅经适配器的正式动作端点；`task_finish` 经 Verifier 门禁后自动执行并读回确认；`task_close` 在关闭条件满足后自动执行并读回确认（条件不满足则暂缓并记录原因）。
 2. **CI**：只允许触发项目配置白名单内的 Job（`config/adapters/jenkins.yaml → jobs[]`，或项目配置的 `integrations.ci`）。部署 Job 一律禁止自动触发。结果以**最终 `result` + 测试报告**为准；FAILURE/ABORTED/NOT_BUILT 绝不判为通过；UNSTABLE 必须分析。
 3. **人工决策**：经 `scripts/notify.sh`（通知适配器）发送，消息必须带 `project_key`、`task_id`、SessionID、BlockerID、阶段。设计未确认前不写业务代码。
 4. **凭据**：不写入仓库、日志、文档、CI 参数。凭据只放 `.env`（gitignored）或用户级工具配置。
@@ -70,7 +70,7 @@
 }
 ```
 
-模板：`.claude/skills/zentao-dev-workflow/templates/agent-report.json`
+模板：`skill/templates/agent-report.json`
 
 ## 问题分级与审批
 
@@ -160,6 +160,6 @@
 
 **工作流完成 ≠ 业务任务关闭。**
 
-**状态流转授权（2026-11-16 更新）**：
-- `task_finish`（doing→done）：**Verifier 质量门禁通过后允许自动执行**；写入后必须读回禅道状态确认结果。
-- `task_close`（→closed）：**始终禁止自动执行**，须本人在禅道手动操作。
+**状态流转授权**：
+- `task_finish`（doing→done）：**Verifier 质量门禁通过后自动执行**；写入后必须读回禅道状态确认结果。
+- `task_close`（done→closed）：关闭条件满足后自动执行，写入后读回确认。条件不满足暂缓并记录原因。

@@ -28,6 +28,7 @@ from human_decision.models import (  # noqa: E402
     _now,
 )
 from human_decision.notifier import DingTalkNotifier  # noqa: E402
+from human_decision.notify_provider import DingTalkProvider  # noqa: E402
 from human_decision.reply_handler import ReplyHandler  # noqa: E402
 from human_decision.session_resumer import SessionResumer  # noqa: E402
 from human_decision import recovery_handler, timeout_handler  # noqa: E402
@@ -65,7 +66,9 @@ class DecisionManager:
         self.cfg = cfg or load_config()
         self.store = store or DecisionStore()
         self._log = logger or (lambda m: None)
-        self.notifier = notifier if notifier is not None else DingTalkNotifier(self.cfg, logger=self._log)
+        # 通知走 NotificationProvider 抽象（默认 DingTalkProvider，内部委托 DingTalkNotifier）；
+        # HITL 核心逻辑不直接依赖钉钉 API，未来可换 FeishuProvider 等实现。
+        self.notifier = notifier if notifier is not None else DingTalkProvider(self.cfg, logger=self._log)
         self.resumer = resumer if resumer is not None else SessionResumer(self.cfg, self.store, logger=self._log)
         self.replies = ReplyHandler(self.cfg, self.store, self.resumer, self.notifier, logger=self._log)
 

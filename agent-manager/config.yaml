@@ -51,9 +51,9 @@ notification:
 zentao:
   enabled: true
   dry_run: false
-  # task_finish（doing→done）：Verifier 质量门禁通过后允许自动执行
+  # task_finish（doing→done）：Verifier 质量门禁通过后自动执行
   allow_auto_finish_after_verification: true
-  # task_close（→closed）：始终禁止自动执行，须本人手动操作
-  allow_auto_close: false
+  # task_close（done→closed）：关闭条件满足后自动执行
+  allow_auto_close: true
   # 写入后必须读回禅道状态确认结果
   require_readback: true

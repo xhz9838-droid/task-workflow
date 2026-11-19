@@ -6,6 +6,13 @@
   progress --task 3413 --stage <key> --text <内容>
            追加阶段进度到 desc 末尾（保留原文）；同一 stage 标记已存在则跳过（幂等）。
            写入走 manage_tasks.py update（统一 PUT + 读回核验）。
+  finish   --task 3413 --consumed 8 --left 0 --finishedDate YYYY-MM-DD [--realStarted YYYY-MM-DD]
+           完成任务 doing→done（复用 ZenTaoClient.task_finish 动作端点 + 读回核验）。
+           幂等：已 done 直接跳过；受配置 zentao.allow_finish 控制（默认 auto_after_gate）。
+  close    --task 3413 --comment <关闭备注>
+           关闭任务 done→closed（关闭条件满足后自动执行 + 读回核验）。
+           幂等：已 closed 直接跳过；受配置 zentao.allow_close 控制（默认 auto_after_gate）。
+           finish 与 close 是两个独立的状态流转，均记录前后状态/结果/失败原因（audit.jsonl）。
 
 调用：python -I scripts/zt.py <cmd> ...
 """
@@ -98,47 +105,115 @@ def cmd_progress(args):
     return 0 if ok else 3
 
 
-def cmd_worklog(args):
-    """记工时（新增工作日志：日期/耗时/工作内容）。
+def _allow_mode(path: str) -> str:
+    """读取配置 zentao.allow_finish / zentao.allow_close（配置真正参与运行时决策）。
 
-    走 MVC 端点 task-recordWorkhour-<id>.html（Token 头认证，实证方式同 VERIFIED_WRITE）。
-    注意：禅道 REST 无工时日志端点（实测 404），只能走此 MVC 端点；该端点受迭代 ACL
-    约束，账号无迭代权限时返回『您无权访问该迭代』（如实报错，不谎报成功）。
-    consumed 必须由人显式提供——PRD 5.5 禁止猜填工时。
+    - auto_after_gate（默认）：满足前置条件后自动执行
+    - manual_only：收紧为本人手动（可选项，非默认）
     """
-    import urllib.parse
-    import urllib.request
-    import urllib.error
+    try:
+        from _config import load_config as _lc2, get as _g2
+        v = _g2(_lc2(), path, None)
+    except Exception:
+        v = None
+    return str(v or "auto_after_gate").strip().lower()
 
+
+def cmd_finish(args):
+    """完成任务 doing→done。复用 ZenTaoClient.task_finish + 读回核验。
+
+    - 幂等：已 done 跳过，不重复流转
+    - 工时/日期由调用方提供（consumed/left/finishedDate 必填），不推算
+    - close 由 cmd_close 按关闭条件另行执行（finish 与 close 是两个独立流转）
+    - 记录：任务 ID、执行 ID、操作前后状态、结果、失败原因写 audit.jsonl
+    """
+    mode = _allow_mode("zentao.allow_finish")
+    if mode != "auto_after_gate":
+        audit(args.task, "zentao.finish", {"result": "blocked_by_config", "mode": mode})
+        print("配置 zentao.allow_finish=%s：拒绝自动 finish，需本人手动完成任务" % mode)
+        return 3
     client = _client()
     task = _load_own_task(client, args.task)
-    before = str(task.get("consumed") or "0")
-    tok = client._token
-    url = "%s/task-recordWorkhour-%s.html" % (client.base_url.rstrip("/"), args.task)
-    fields = {"date": args.date, "consumed": str(args.consumed), "work": args.work}
-    if args.left:
-        fields["left"] = str(args.left)
-    body = urllib.parse.urlencode(fields).encode()
-    req = urllib.request.Request(url, data=body, method="POST",
-                                 headers={"Token": tok,
-                                          "Content-Type": "application/x-www-form-urlencoded"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:
-        html = e.read().decode("utf-8", "replace")
-        print("❌ HTTP %s: %s" % (e.code, html[:300]))
+    before = str(task.get("status") or "").lower()
+    if before == "done":
+        print("任务 %s 已是 done，跳过（幂等）" % args.task)
+        audit(args.task, "zentao.finish", {"result": "skipped_already_done",
+                                          "exec_id": args.exec_id, "before": before})
+        return 0
+    if before != "doing":
+        audit(args.task, "zentao.finish", {"result": "deferred", "exec_id": args.exec_id,
+                                          "before": before, "reason": "非 doing 状态，不猜测流转"})
+        print("任务 %s 当前状态 %r 不是 doing，不允许 finish（doing→done），不猜测流转" % (args.task, before))
         return 3
-    if "无权访问" in html:
-        print("❌ 记工时被拦截：『您无权访问该迭代』——账号缺迭代/项目权限（解决后重试即可）")
-        return 2
-    # 读回核验：任务 consumed 变化 + 页面回执特征
-    after_task = client.task_detail(args.task)
-    after = str(after_task.get("consumed") or "0")
-    ok = after != before
-    print("读回核验：consumed %s -> %s %s" % (before, after, "✅" if ok else "⚠️ 未变化"))
-    if not ok:
-        print("页面回执（前 200 字）：", html[:200])
+    try:
+        client.task_finish(
+            args.task, args.consumed, args.left, args.finishedDate,
+            realStarted=args.realStarted or None,
+        )
+    except Exception as e:
+        audit(args.task, "zentao.finish", {"result": "failed", "exec_id": args.exec_id,
+                                          "before": before, "error": str(e)[:200]})
+        print("finish 调用失败：%s" % e)
+        return 3
+    # 读回核验：必须确认 status 已变 done
+    try:
+        after = str(client.task_detail(args.task).get("status") or "").lower()
+    except Exception as e:
+        audit(args.task, "zentao.finish", {"result": "readback_failed", "exec_id": args.exec_id,
+                                          "before": before, "error": str(e)[:200]})
+        print("finish 已调用但读回失败：%s" % e)
+        return 4
+    ok = after == "done"
+    audit(args.task, "zentao.finish", {"result": "success" if ok else "readback_mismatch",
+                                      "exec_id": args.exec_id,
+                                      "before": before, "after": after, "verified": ok})
+    print(("✅" if ok else "❌") + " 读回核验：status=%s（期望 done）" % after)
+    return 0 if ok else 3
+
+
+def cmd_close(args):
+    """关闭任务 done→closed（关闭条件满足后自动执行）+ 读回核验。
+
+    关闭条件：禅道状态须 done（交付/验收条件由上层判定）。不满足则暂缓并记录原因。幂等：已 closed 跳过。
+    """
+    mode = _allow_mode("zentao.allow_close")
+    if mode != "auto_after_gate":
+        audit(args.task, "zentao.close", {"result": "blocked_by_config", "mode": mode})
+        print("配置 zentao.allow_close=%s：拒绝自动 close，需本人手动关闭" % mode)
+        return 3
+    client = _client()
+    task = _load_own_task(client, args.task)
+    before = str(task.get("status") or "").lower()
+    if before == "closed":
+        print("任务 %s 已是 closed，跳过（幂等）" % args.task)
+        audit(args.task, "zentao.close", {"result": "skipped_already_closed",
+                                         "exec_id": args.exec_id, "before": before})
+        return 0
+    if before != "done":
+        audit(args.task, "zentao.close", {"result": "deferred", "exec_id": args.exec_id,
+                                         "before": before, "reason": "仅 done→closed，当前状态不满足关闭条件"})
+        print("暂缓关闭：任务 %s 当前状态 %r 不是 done（close 仅 done→closed）" % (args.task, before))
+        return 3
+    try:
+        client.task_close(args.task, args.comment)
+    except Exception as e:
+        audit(args.task, "zentao.close", {"result": "failed", "exec_id": args.exec_id,
+                                         "before": before, "error": str(e)[:200]})
+        print("close 调用失败：%s" % e)
+        return 3
+    # 读回核验：必须确认 status 已变 closed
+    try:
+        after = str(client.task_detail(args.task).get("status") or "").lower()
+    except Exception as e:
+        audit(args.task, "zentao.close", {"result": "readback_failed", "exec_id": args.exec_id,
+                                         "before": before, "error": str(e)[:200]})
+        print("close 已调用但读回失败：%s" % e)
+        return 4
+    ok = after == "closed"
+    audit(args.task, "zentao.close", {"result": "success" if ok else "readback_mismatch",
+                                     "exec_id": args.exec_id,
+                                     "before": before, "after": after, "verified": ok})
+    print(("✅" if ok else "❌") + " 读回核验：status=%s（期望 closed）" % after)
     return 0 if ok else 3
 
 
@@ -193,13 +268,19 @@ def main():
     g.add_argument("--stage", required=True, help="阶段键，如 design / backend / jenkins-1")
     g.add_argument("--text", required=True)
     g.set_defaults(func=cmd_progress)
-    w = sub.add_parser("worklog", help="记工时：新增工作日志（日期/耗时/工作内容）")
-    w.add_argument("--task", required=True)
-    w.add_argument("--date", required=True, help="日期，如 2026-11-17")
-    w.add_argument("--consumed", required=True, type=float, help="本日消耗（小时）——人工提供，禁止猜填")
-    w.add_argument("--work", required=True, help="工作内容（已完成内容写这里，非 desc）")
-    w.add_argument("--left", type=float, default=None, help="预计剩余（小时，可选）")
-    w.set_defaults(func=cmd_worklog)
+    f = sub.add_parser("finish", help="完成任务 doing→done（满足门禁后自动执行，读回核验）")
+    f.add_argument("--task", required=True)
+    f.add_argument("--consumed", type=float, required=True, help="已消耗工时（调用方提供，不推算）")
+    f.add_argument("--left", type=float, required=True, help="剩余工时（调用方提供，不推算）")
+    f.add_argument("--finishedDate", required=True, help="实际完成日期 YYYY-MM-DD")
+    f.add_argument("--realStarted", help="实际开始日期 YYYY-MM-DD（doing 态 realStarted 为空时回填）")
+    f.add_argument("--exec-id", default="", help="执行 ID（审计记录用）")
+    f.set_defaults(func=cmd_finish)
+    c = sub.add_parser("close", help="关闭任务 done→closed（关闭条件满足后自动执行，读回核验）")
+    c.add_argument("--task", required=True)
+    c.add_argument("--comment", required=True, help="关闭备注（禅道必填，不带则静默不生效）")
+    c.add_argument("--exec-id", default="", help="执行 ID（审计记录用）")
+    c.set_defaults(func=cmd_close)
     j = sub.add_parser("projects", help="只读：当前用户可访问的禅道项目列表")
     j.set_defaults(func=cmd_projects)
     k = sub.add_parser("project", help="只读：任务→项目归属信息")

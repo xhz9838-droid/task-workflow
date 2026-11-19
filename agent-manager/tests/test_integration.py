@@ -330,12 +330,12 @@ def test_state_recovery() -> None:
 
 # --------------------------------------------------------------- 禅道状态流转策略
 def test_zentao_finish_policy() -> None:
-    section("禅道 task_finish/task_close 策略（2026-11-16 授权）")
+    section("禅道 task_finish/task_close 策略")
     from zentao_reporter import ZenTaoReporter
 
     z = ZenTaoReporter(dry_run=True)
 
-    # task_finish：Verifier 门禁通过后允许自动
+    # task_finish：Verifier 门禁通过后自动
     ok, _ = z.can_finish(verifier_passed=True, consumed=8, left=0)
     check("门禁通过 → 允许 task_finish", ok is True)
 
@@ -348,12 +348,38 @@ def test_zentao_finish_policy() -> None:
     ok4, r4 = z.can_finish(verifier_passed=True, consumed=None, left=None)
     check("缺工时 → 拒绝（不推算）", ok4 is False and "不推算" in r4)
 
-    # task_close：始终禁止
-    ok5, r5 = z.can_close()
-    check("task_close 始终禁止", ok5 is False and "禁止" in r5)
+    # task_close：按关闭条件判断，不满足则暂缓
+    ok5, r5 = z.can_close(task_detail={"status": "done"}, verifier_passed=True)
+    check("关闭条件满足 → 允许 task_close", ok5 is True)
 
-    rc = z.close_blocked("3413")
-    check("close_blocked 明确拒绝", rc["ok"] is False)
+    ok6, r6 = z.can_close(task_detail={"status": "doing"}, verifier_passed=True)
+    check("禅道状态非 done → 暂缓关闭", ok6 is False and "done" in r6)
+
+    ok7, r7 = z.can_close(task_detail={"status": "done"}, verifier_passed=False)
+    check("验收未过 → 暂缓关闭", ok7 is False and "验收" in r7)
+
+    ok8, _ = z.can_close(task_detail={"status": "done"}, verifier_passed=True, deliverables_ok=False)
+    check("交付未完成 → 暂缓关闭", ok8 is False)
+
+    ok9, _ = z.can_close(task_detail={"status": "done"}, verifier_passed=True, records_ok=False)
+    check("记录缺失 → 暂缓关闭", ok9 is False)
+
+    ok10, _ = z.can_close(task_detail={"status": "closed"}, verifier_passed=True)
+    check("已 closed → 幂等放行", ok10 is True)
+
+    # 暂缓关闭必须记录具体原因
+    d = z.close_deferred(task_id="T1", project_key="p", reason="验收未通过")
+    check("暂缓关闭记录原因", d["ok"] is False and d.get("deferred") is True and "验收未通过" in d["reason"])
+
+    # close 成功路径（dry_run，含读回确认语义）
+    r11 = z.close(task_id="T1", project_key="p", comment="交付完成，关闭",
+                  verifier_passed=True, task_detail={"status": "done"})
+    check("关闭条件满足 → 自动 close（dry_run）", r11["ok"] is True)
+
+    # close 条件不满足 → 暂缓，不执行
+    r12 = z.close(task_id="T1", project_key="p", comment="x",
+                  verifier_passed=False, task_detail={"status": "done"})
+    check("关闭条件不满足 → 暂缓不执行", r12["ok"] is False and r12.get("deferred") is True)
 
     # finish 缺 finishedDate → 拒绝（不推算日期）
     r6 = z.finish(task_id="T1", project_key="p", verifier_passed=True,
@@ -376,7 +402,7 @@ def test_zentao_finish_policy() -> None:
     zc = cfg.get("zentao", {})
     check("配置含 allow_auto_finish_after_verification",
           "allow_auto_finish_after_verification" in zc)
-    check("配置 allow_auto_close=false", zc.get("allow_auto_close") is False)
+    check("配置 allow_auto_close=true", zc.get("allow_auto_close") is True)
     check("配置 require_readback=true", zc.get("require_readback") is True)
 
 # --------------------------------------------------------------- 主入口
