@@ -33,7 +33,7 @@ except Exception:
 
 from _config import _read_yaml, get  # noqa: E402
 from _home import resolve_workflow_home  # noqa: E402
-from project_resolver import load_registry  # noqa: E402
+from project_resolver import current_user_id, load_registry  # noqa: E402
 from repo_check import check_repo, detect_technology  # noqa: E402
 
 _KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -41,6 +41,14 @@ _KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 class RegisterError(Exception):
     """注册校验失败——不写入任何文件。"""
+
+
+def _try_resolve_user() -> str:
+    """尝试从环境/配置解析当前用户；失败返回空字符串（`--user` 为可选参数）。"""
+    try:
+        return current_user_id()
+    except Exception:
+        return ""
 
 
 # --------------------------------------------------------------- plan
@@ -246,7 +254,7 @@ def main(argv=None) -> int:
                 project_key=args.project_key, name=args.name,
                 zentao_project_id=args.zentao_project_id,
                 product_ids=[x for x in args.product_ids.split(",") if x],
-                repos=repos, user_id=args.user,
+                repos=repos, user_id=args.user or _try_resolve_user(),
             )
             body = json.dumps(plan, ensure_ascii=False, indent=2)
             if args.out:

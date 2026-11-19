@@ -56,8 +56,10 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 
 ## 启动前必检（缺任一项**明确报错**，不猜测）
 
-1. **项目解析**：`python -I "{WF}/scripts/project_resolver.py" context --project <key> --user <id>`
-   （未注册/禁用 → 提示 `/workflow-register-project`，不创建 execution）
+1. **项目解析**：`python -I "{WF}/scripts/project_resolver.py" context --project <key> [--user <id>]`
+   （`--user` 省略时自动经 WORKFLOW_USER_ID / ~/.claude/zentao-dev-workflow.json 解析；
+   显式指定优先；**禁止**用 `$(whoami)` 等 OS 用户名代替工作流用户 ID；
+   未注册/禁用 → 提示 `/workflow-register-project`，不创建 execution）
 2. **项目路径**：`config/users/{id}.yaml → project_paths` 优先于 `repositories[].path`（`${ENV}` 展开）；
    仓库校验经 `scripts/repo_check.py`（`blocked`/`mismatch` → 列出问题交用户处理，不自动修复）
 3. **人员配置**：`config/users/{user_id}.yaml` 存在（或 `--user` 显式指定）
@@ -76,7 +78,7 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 2. 获取任务（task_source 适配器；无适配器则从 task-context.md / 人工输入）
 3. 需求分析（architect，读任务描述 + 项目代码 + 项目 CLAUDE.md）
 4. 技术设计（architect / database，产出 design/）
-5. 人工设计确认（通知渠道；未确认不进编码）
+5. 人工设计确认（L3 决策强制路由：必须通过 `mcp__human-decision__request_human_decision` MCP 工具发起；禁止在对话中直接询问用户代替 L3 决策流程。调用后 `wait_for_decision` 有界等待 300s，超时 → outcome=suspended → 挂起当前节点，继续独立节点。权限拦截 → 记录待授权事件到 decisions.md，不阻塞主流程。）
 6. 生成任务 DAG（tasks.yaml）+ migrate_runstate.py（历史 run-state 迁入 SQLite）
 7. Agent 调度（dispatch.py plan/register-dispatch/confirm-running；按 agents{} 过滤启用项）
 8. 开发 + 测试（各 Agent 在 worktree 内，遵守文件所有权）
@@ -88,6 +90,15 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 ```
 
 > **状态源**：DAG 节点执行状态唯一真相源是 agent-manager SQLite（`node_dispatches`）。`run-state.json` 是 `dispatch.py export-state` 的只读快照。主控/Skill/Subagent 禁止直接改 JSON。
+>
+> **阶段进度自动回写**：每个阶段（需求分析、技术设计、人工设计确认、开发+测试、QA+集成审查）完成后自动调用 Zentao Reporter 追加进度（`report_progress`），不等待用户确认。回写失败入 `pending_writes` 队列，后续重试。
+
+## L3 决策强制路由
+
+1. 任何 L3 级决策（设计确认、DDL 变更、API 契约破坏等）必须通过 `mcp__human-decision__request_human_decision` MCP 工具发起
+2. 禁止在对话中直接询问用户代替 L3 决策流程
+3. 调用后使用 `wait_for_decision` 模型（有界等待 300s），超时 → outcome=suspended → 挂起当前节点，继续独立节点
+4. 权限拦截 → 记录待授权事件到 decisions.md，不等死
 
 ## 核心规则
 
@@ -149,3 +160,4 @@ Skill 按 `project_key` 加载项目配置，按 `task_id` 加载任务状态，
 - 不自动执行部署、服务重启、任务关闭
 - 缺配置时**报缺失项**，不猜测、不编造默认值
 - 无 ZenTao / Jenkins 配置时，仍可执行需求分析、开发、测试、代码审查、状态管理
+- **禁止无条件自行结束工作流**。结束前必须检查：(1) 所有 DAG 节点处于终态（DONE/FAILED/CANCELLED）；(2) 无待处理 Human Decision（WAITING_HUMAN 节点）；(3) 无 pending_writes 未刷写。任一不满足 → 继续推进。

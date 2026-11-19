@@ -164,24 +164,41 @@ def resolve_by_key(project_key: str, *, user_id: str | None = None) -> dict:
 # --------------------------------------------------------------- 用户路径与上下文
 def current_user_id(explicit: str | None = None) -> str:
     """当前用户解析：显式参数 > WORKFLOW_USER_ID 环境变量 > 用户级工作流配置。不猜测。"""
+    return _resolve_user_id(explicit)[0]
+
+
+def _resolve_user_id(explicit: str | None = None) -> tuple[str, str]:
+    """当前用户解析，返回 (user_id, source)。
+
+    source: "explicit" | "env:WORKFLOW_USER_ID" | "config:~/.claude/zentao-dev-workflow.json"
+    """
     if explicit:
-        return str(explicit).strip()
+        return str(explicit).strip(), "explicit"
     env = (os.environ.get("WORKFLOW_USER_ID") or "").strip()
     if env:
-        return env
+        return env, "env:WORKFLOW_USER_ID"
     try:
         uc = os.path.expanduser("~/.claude/zentao-dev-workflow.json")
         if os.path.exists(uc):
             with open(uc, encoding="utf-8") as f:
                 uid = str((json.load(f) or {}).get("user_id") or "").strip()
             if uid:
-                return uid
+                return uid, "config:~/.claude/zentao-dev-workflow.json"
     except Exception:
         pass
     raise ResolveError(
         "无法确定当前用户：请显式传 user_id，或设置环境变量 WORKFLOW_USER_ID，"
         "或在 ~/.claude/zentao-dev-workflow.json 配置 user_id"
     )
+
+
+def _user_id_source(explicit: str | None = None) -> str:
+    """返回 user_id 的来源描述（用于 whoami 命令诊断）。"""
+    try:
+        _, source = _resolve_user_id(explicit)
+        return source
+    except ResolveError as e:
+        return "unresolved: %s" % str(e)
 
 
 def load_user_paths(user_id: str, home: str | None = None) -> dict:
@@ -256,6 +273,8 @@ def main(argv=None) -> int:
     pc.add_argument("--project", required=True)
     pc.add_argument("--user", default="")
     pc.add_argument("--json", action="store_true")
+    pw = sub.add_parser("whoami", help="解析当前用户 ID（不依赖 OS 用户名）")
+    pw.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
     if args.cmd == "match":
@@ -271,6 +290,14 @@ def main(argv=None) -> int:
             print(json.dumps({"error": str(e)}, ensure_ascii=False))
             return 3
         print(json.dumps(ctx, ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "whoami":
+        try:
+            uid = current_user_id()
+            print(json.dumps({"user_id": uid, "source": _user_id_source()}, ensure_ascii=False))
+        except ResolveError as e:
+            print(json.dumps({"error": str(e)}, ensure_ascii=False))
+            return 3
         return 0
     p.print_help()
     return 2
