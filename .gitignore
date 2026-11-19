@@ -42,3 +42,6 @@ __pycache__/
 .pytest_cache/
 *.pyc
 *.log
+
+# 未完成的模块（开发中，下一轮完成后切分提交）
+zentao/
