@@ -6,8 +6,10 @@
   progress --task 3413 --stage <key> --text <内容>
            追加阶段进度到 desc 末尾（保留原文）；同一 stage 标记已存在则跳过（幂等）。
            写入走 manage_tasks.py update（统一 PUT + 读回核验）。
-  finish   --task 3413 --consumed 8 --left 0 --finishedDate YYYY-MM-DD [--realStarted YYYY-MM-DD]
+  finish   --task 3413 --consumed 8 --left 0 --finishedDate YYYY-MM-DD \
+           --work <完成内容> --commit <git commit id> [--realStarted YYYY-MM-DD]
            完成任务 doing→done（复用 ZenTaoClient.task_finish 动作端点 + 读回核验）。
+           完成内容 + commit id 写入 finished 动作备注（不写 desc）。
            幂等：已 done 直接跳过；受配置 zentao.allow_finish 控制（默认 auto_after_gate）。
   close    --task 3413 --comment <关闭备注>
            关闭任务 done→closed（关闭条件满足后自动执行 + 读回核验）。
@@ -127,11 +129,30 @@ def _allow_mode(path: str) -> str:
     return str(v or "auto_after_gate").strip().lower()
 
 
+def _finished_note(work: str, commit: str) -> str:
+    """完成任务备注：完成内容 + git commit id（写入 finished 动作，不写 desc）。"""
+    note = (work or "").strip()
+    c = (commit or "").strip()
+    if c:
+        note = ("%s | commit: %s" % (note, c)) if note else ("commit: %s" % c)
+    return note
+
+
+def _finished_action_comment(task) -> str:
+    """取任务最近一次 finished 动作的备注。"""
+    for a in reversed((task or {}).get("actions") or []):
+        if str(a.get("action") or "").lower() == "finished":
+            return str(a.get("comment") or "")
+    return ""
+
+
 def cmd_finish(args):
     """完成任务 doing→done。复用 ZenTaoClient.task_finish + 读回核验。
 
     - 幂等：已 done 跳过，不重复流转
     - 工时/日期由调用方提供（consumed/left/finishedDate 必填），不推算
+    - 🔴 完成必须带完成内容 + git commit id（--work/--commit），写入 finished 动作备注；
+      **不写任务 desc**。读回核验完成动作备注含 commit。
     - close 由 cmd_close 按关闭条件另行执行（finish 与 close 是两个独立流转）
     - 记录：任务 ID、执行 ID、操作前后状态、结果、失败原因写 audit.jsonl
     """
@@ -145,6 +166,9 @@ def cmd_finish(args):
     before = str(task.get("status") or "").lower()
     if before == "done":
         print("任务 %s 已是 done，跳过（幂等）" % args.task)
+        note = _finished_action_comment(task)
+        if not note:
+            print("⚠️ 该任务完成动作无完成内容/commit（此前完成时未带），本次不再改写")
         audit(args.task, "zentao.finish", {"result": "skipped_already_done",
                                           "exec_id": args.exec_id, "before": before})
         return 0
@@ -153,10 +177,11 @@ def cmd_finish(args):
                                           "before": before, "reason": "非 doing 状态，不猜测流转"})
         print("任务 %s 当前状态 %r 不是 doing，不允许 finish（doing→done），不猜测流转" % (args.task, before))
         return 3
+    note = _finished_note(args.work, args.commit)
     try:
         client.task_finish(
             args.task, args.consumed, args.left, args.finishedDate,
-            realStarted=args.realStarted or None,
+            realStarted=args.realStarted or None, comment=note,
         )
     except Exception as e:
         audit(args.task, "zentao.finish", {"result": "failed", "exec_id": args.exec_id,
@@ -165,18 +190,29 @@ def cmd_finish(args):
         return 3
     # 读回核验：必须确认 status 已变 done
     try:
-        after = str(client.task_detail(args.task).get("status") or "").lower()
+        after_task = client.task_detail(args.task)
     except Exception as e:
         audit(args.task, "zentao.finish", {"result": "readback_failed", "exec_id": args.exec_id,
                                           "before": before, "error": str(e)[:200]})
         print("finish 已调用但读回失败：%s" % e)
         return 4
+    after = str(after_task.get("status") or "").lower()
     ok = after == "done"
+    # 完成内容核验：finished 动作备注须含 commit id。
+    got = _finished_action_comment(after_task)
+    note_ok = (args.commit.strip() in got) if args.commit.strip() else bool(got.strip())
     audit(args.task, "zentao.finish", {"result": "success" if ok else "readback_mismatch",
                                       "exec_id": args.exec_id,
-                                      "before": before, "after": after, "verified": ok})
+                                      "before": before, "after": after, "verified": ok,
+                                      "note_verified": note_ok})
     print(("✅" if ok else "❌") + " 读回核验：status=%s（期望 done）" % after)
-    return 0 if ok else 3
+    print(("✅" if note_ok else "⚠️") + " 完成动作备注：%s" % (got[:200] or "（空）"))
+    if note_ok and ok:
+        return 0
+    if not ok:
+        return 3
+    print("⚠️ 完成内容/commit 未出现在 finished 动作（禅道可能未接受 comment），请人工核对")
+    return 4
 
 
 def cmd_close(args):
@@ -276,11 +312,15 @@ def main():
     g.add_argument("--stage", required=True, help="阶段键，如 design / backend / jenkins-1")
     g.add_argument("--text", required=True)
     g.set_defaults(func=cmd_progress)
-    f = sub.add_parser("finish", help="完成任务 doing→done（满足门禁后自动执行，读回核验）")
+    f = sub.add_parser("finish", help="完成任务 doing→done（须带完成内容 + commit id，读回核验）")
     f.add_argument("--task", required=True)
     f.add_argument("--consumed", type=float, required=True, help="已消耗工时（调用方提供，不推算）")
     f.add_argument("--left", type=float, required=True, help="剩余工时（调用方提供，不推算）")
     f.add_argument("--finishedDate", required=True, help="实际完成日期 YYYY-MM-DD")
+    f.add_argument("--work", required=True,
+                   help="完成内容（做了什么/交付了什么；写入 finished 动作备注，不写 desc）")
+    f.add_argument("--commit", required=True,
+                   help="git commit id（写入 finished 动作备注，如 fd6f11f）")
     f.add_argument("--realStarted", help="实际开始日期 YYYY-MM-DD（doing 态 realStarted 为空时回填）")
     f.add_argument("--exec-id", default="", help="执行 ID（审计记录用）")
     f.set_defaults(func=cmd_finish)

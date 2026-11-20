@@ -125,7 +125,7 @@
 ## 人工确认 → 停止
 
 **状态流转授权（2026-11-16 更新）**：
-- `task_finish`（doing→done）：Verifier 质量门禁通过后**允许自动执行**，写入后**必须读回禅道状态确认结果**
+- `task_finish`（doing→done）：Verifier 质量门禁通过后**允许自动执行**，**必须带完成内容 + git commit id**（写入 finished 动作备注，不写任务 desc），写入后**必须读回禅道状态与完成备注确认结果**
 - `task_close`（→closed）：**始终禁止自动执行**，须本人手动操作
 
 工时/日期不推算：`consumed`/`left`/`finishedDate` 必须由调用方提供。

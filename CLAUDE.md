@@ -47,7 +47,7 @@
 
 ## 硬约束
 
-1. **任务系统**：经 `config/adapters/*.yaml` 启用的适配器访问（ZenTao / 其他）。只操作本人任务。字段编辑只用 PUT + 读回核验；进度**追加**不覆盖原文；不编造工时/日期/百分比；状态流转仅经适配器的正式动作端点；`task_finish` 经 Verifier 门禁后自动执行并读回确认；`task_close` 在关闭条件满足后自动执行并读回确认（条件不满足则暂缓并记录原因）。
+1. **任务系统**：经 `config/adapters/*.yaml` 启用的适配器访问（ZenTao / 其他）。只操作本人任务。字段编辑只用 PUT + 读回核验；进度**追加**不覆盖原文；不编造工时/日期/百分比；状态流转仅经适配器的正式动作端点；`task_finish` 经 Verifier 门禁后自动执行并读回确认（**必须带完成内容 + git commit id**，写入 finished 动作备注，不写任务 desc）；`task_close` 在关闭条件满足后自动执行并读回确认（条件不满足则暂缓并记录原因）。
 2. **CI**：只允许触发项目配置白名单内的 Job（`config/adapters/jenkins.yaml → jobs[]`，或项目配置的 `integrations.ci`）。部署 Job 一律禁止自动触发。结果以**最终 `result` + 测试报告**为准；FAILURE/ABORTED/NOT_BUILT 绝不判为通过；UNSTABLE 必须分析。
 3. **人工决策**：经 `scripts/notify.sh`（通知适配器）发送，消息必须带 `project_key`、`task_id`、SessionID、BlockerID、阶段。设计未确认前不写业务代码。
 4. **凭据**：不写入仓库、日志、文档、CI 参数。凭据只放 `.env`（gitignored）或用户级工具配置。
@@ -161,5 +161,5 @@
 **工作流完成 ≠ 业务任务关闭。**
 
 **状态流转授权**：
-- `task_finish`（doing→done）：**Verifier 质量门禁通过后自动执行**；写入后必须读回禅道状态确认结果。
+- `task_finish`（doing→done）：**Verifier 质量门禁通过后自动执行**；**必须带完成内容 + git commit id**（写入 finished 动作备注，不写任务 desc）；写入后必须读回禅道状态与完成备注确认结果。
 - `task_close`（done→closed）：关闭条件满足后自动执行，写入后读回确认。条件不满足暂缓并记录原因。

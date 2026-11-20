@@ -89,7 +89,7 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 10. 失败修复（L1/L2 自动，L3 人工）；dispatch.py reconcile 对账僵尸/超时
 11. QA + 集成审查（dispatch.py record-result 写执行层结果，主控验收层核验）
 12. 进度回写（task_source 适配器，追加不覆盖；`pending_writes` 非空时先 flush）
-13. 最终报告 → Verifier 门禁通过 → **`dispatch.py gate --finalize` 返回 ok** → 自动 task_finish（读回确认）→ 关闭条件满足则自动 task_close（读回确认）
+13. 最终报告 → Verifier 门禁通过 → **`dispatch.py gate --finalize` 返回 ok** → 自动 task_finish（读回确认；**须带完成内容 + git commit id**，写入 finished 动作备注，不写任务 desc）→ 关闭条件满足则自动 task_close（读回确认）
 ```
 
 > **状态源**：DAG 节点执行状态唯一真相源是 agent-manager SQLite（`node_dispatches`）。`run-state.json` 是 `dispatch.py export-state` 的只读快照。主控/Skill/Subagent 禁止直接改 JSON。
@@ -110,7 +110,7 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 - **规则 1/2/3**：子 Agent 完成后必须继续推进 DAG，不得提前结束
 - **规则 4**：完成状态须证据核验，不采信 Agent 自述
 - **规则 6**：中断恢复从最近可信检查点继续，不重复已完成节点
-- **规则 8**：结束前必须运行 `python -I "{WF}/scripts/dispatch.py" --project <k> --task-id <id> gate --finalize`，返回 ok 才允许 COMPLETED；`task_finish` 经 Verifier 门禁后自动执行（须读回确认）；`task_close` 在关闭条件满足后自动执行（须读回确认），条件不满足则暂缓并记录原因。
+- **规则 8**：结束前必须运行 `python -I "{WF}/scripts/dispatch.py" --project <k> --task-id <id> gate --finalize`，返回 ok 才允许 COMPLETED；`task_finish` 经 Verifier 门禁后自动执行（须读回确认，**且须带完成内容 + git commit id**，写入 finished 动作备注、不写任务 desc）；`task_close` 在关闭条件满足后自动执行（须读回确认），条件不满足则暂缓并记录原因。
 
 ## 何时查阅 references
 

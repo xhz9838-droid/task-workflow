@@ -20,8 +20,9 @@ import zt
 class FakeFlowClient:
     """Mock ZenTaoClient：按序返回 task_detail 状态，记录流转调用。"""
 
-    def __init__(self, statuses):
+    def __init__(self, statuses, finished_comment=""):
         self.statuses = list(statuses)
+        self.finished_comment = finished_comment
         self.calls = []
 
     def whoami(self):
@@ -29,10 +30,14 @@ class FakeFlowClient:
 
     def task_detail(self, task_id):
         s = self.statuses.pop(0) if len(self.statuses) > 1 else self.statuses[0]
-        return {"id": task_id, "status": s, "assignedTo": "me"}
+        actions = ([{"action": "finished", "comment": self.finished_comment}]
+                   if s == "done" else [])
+        return {"id": task_id, "status": s, "assignedTo": "me", "actions": actions}
 
-    def task_finish(self, task_id, consumed, left, finishedDate, realStarted=None):
-        self.calls.append(("finish", task_id, consumed, left, finishedDate, realStarted))
+    def task_finish(self, task_id, consumed, left, finishedDate, realStarted=None,
+                    comment=None):
+        self.calls.append(("finish", task_id, consumed, left, finishedDate,
+                           realStarted, comment))
         return ({}, 200)
 
     def task_close(self, task_id, comment):
@@ -42,7 +47,8 @@ class FakeFlowClient:
 
 def _finish_args(**over):
     kw = dict(task="3413", consumed=8.0, left=0.0, finishedDate="2026-11-20",
-              realStarted=None, exec_id="E1")
+              realStarted=None, exec_id="E1",
+              work="完成开发", commit="fd6f11f")
     kw.update(over)
     return SimpleNamespace(**kw)
 
@@ -67,15 +73,28 @@ def _use(monkeypatch, fake, mode="auto_after_gate"):
 
 # ------------------------------------------------------------- finish
 def test_finish_success_readback(monkeypatch, audit_rec, capsys):
-    fake = FakeFlowClient(["doing", "done"])
+    fake = FakeFlowClient(["doing", "done"], finished_comment="完成开发 | commit: fd6f11f")
     _use(monkeypatch, fake)
     rc = zt.cmd_finish(_finish_args())
     assert rc == 0
-    assert fake.calls == [("finish", "3413", 8.0, 0.0, "2026-11-20", None)]
+    assert fake.calls == [("finish", "3413", 8.0, 0.0, "2026-11-20", None,
+                           "完成开发 | commit: fd6f11f")]
     rec = [d for _, a, d in audit_rec if a == "zentao.finish"]
     assert rec and rec[-1]["result"] == "success"
     assert rec[-1]["before"] == "doing" and rec[-1]["after"] == "done"
     assert rec[-1]["exec_id"] == "E1"
+    assert rec[-1]["note_verified"] is True
+
+
+def test_finish_warns_when_note_not_persisted(monkeypatch, audit_rec, capsys):
+    """status=done 但 finished 动作未带完成内容/commit → rc=4，不谎报成功。"""
+    fake = FakeFlowClient(["doing", "done"], finished_comment="")
+    _use(monkeypatch, fake)
+    rc = zt.cmd_finish(_finish_args())
+    assert rc == 4
+    rec = [d for _, a, d in audit_rec if a == "zentao.finish"]
+    assert rec[-1]["note_verified"] is False
+    assert "未出现在 finished 动作" in capsys.readouterr().out
 
 
 def test_finish_idempotent_when_done(monkeypatch, audit_rec):
@@ -159,7 +178,8 @@ def test_close_config_manual_only_blocks(monkeypatch, audit_rec):
 
 def test_finish_and_close_are_separate_flows(monkeypatch, audit_rec):
     """finish 与 close 是两个独立状态流转：done 后仍需显式 close。"""
-    fake = FakeFlowClient(["doing", "done", "done", "closed"])
+    fake = FakeFlowClient(["doing", "done", "done", "closed"],
+                          finished_comment="完成开发 | commit: fd6f11f")
     _use(monkeypatch, fake)
     assert zt.cmd_finish(_finish_args()) == 0
     assert zt.cmd_close(_close_args()) == 0

@@ -198,6 +198,8 @@ class ZenTaoReporter:
         left=None,
         finished_date: str | None = None,
         real_started: str | None = None,
+        summary: str = "",
+        commit: str = "",
         human_confirmed: bool = False,
         exec_id: str = "",
     ) -> dict:
@@ -205,6 +207,8 @@ class ZenTaoReporter:
 
         - 仅在 Verifier 门禁通过（或人工确认）后执行
         - 工时/日期不推算：consumed/left/finished_date 必须由调用方提供
+        - 🔴 完成必须带完成内容（summary）+ git commit id：写入 finished 动作备注，
+          **不写任务 desc**；读回核验完成备注含 commit
         - 写入后**必须读回禅道状态确认结果**
         - 与 close 相互独立（finish 与 close 是两个不同生命周期操作）
         """
@@ -219,12 +223,18 @@ class ZenTaoReporter:
 
         if finished_date is None:
             return {"ok": False, "reason": "finishedDate 未提供，不推算完成日期", "stage": "precheck"}
+        if not (summary or "").strip() or not (commit or "").strip():
+            return {"ok": False,
+                    "reason": "完成内容 summary 与 git commit id 必须提供（写入 finished 动作备注）",
+                    "stage": "precheck"}
 
         payload = {
             "consumed": consumed,
             "left": left,
             "finished_date": finished_date,
             "real_started": real_started,
+            "summary": summary,
+            "commit": commit,
             "verifier_passed": verifier_passed,
             "exec_id": exec_id,
         }
@@ -237,6 +247,8 @@ class ZenTaoReporter:
             "finish", "--task", str(task_id),
             "--consumed", str(consumed), "--left", str(left),
             "--finishedDate", finished_date,
+            "--work", summary,
+            "--commit", commit,
             "--exec-id", exec_id or "",
         ]
         if real_started:
@@ -384,6 +396,8 @@ class ZenTaoReporter:
                         left=payload.get("left"),
                         finished_date=payload.get("finished_date"),
                         real_started=payload.get("real_started"),
+                        summary=payload.get("summary", ""),
+                        commit=payload.get("commit", ""),
                         exec_id=str(payload.get("exec_id") or ""),
                     )
                 elif action == "close":

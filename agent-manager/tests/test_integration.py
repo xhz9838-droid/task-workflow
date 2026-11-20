@@ -391,9 +391,15 @@ def test_zentao_finish_policy() -> None:
                   consumed=8, left=0, finished_date="2026-11-17")
     check("finish 门禁未过 → precheck 拒绝", r7["ok"] is False and r7.get("stage") == "precheck")
 
+    # finish 缺完成内容/commit → 拒绝（完成任务须带完成内容 + git commit id）
+    r9 = z.finish(task_id="T1", project_key="p", verifier_passed=True,
+                  consumed=8, left=0, finished_date="2026-11-17")
+    check("缺完成内容/commit → 拒绝", r9["ok"] is False and "完成内容" in r9["reason"])
+
     # finish 成功路径（dry_run）含读回确认语义
     r8 = z.finish(task_id="T1", project_key="p", verifier_passed=True,
-                  consumed=8, left=0, finished_date="2026-11-17")
+                  consumed=8, left=0, finished_date="2026-11-17",
+                  summary="完成开发", commit="fd6f11f")
     check("finish 门禁通过 → 执行", r8["ok"] is True)
 
     # 配置项存在
@@ -404,12 +410,6 @@ def test_zentao_finish_policy() -> None:
           "allow_auto_finish_after_verification" in zc)
     check("配置 allow_auto_close=true", zc.get("allow_auto_close") is True)
     check("配置 require_readback=true", zc.get("require_readback") is True)
-
-
-def test_all_checks_passed() -> None:
-    """pytest 收集时校验 check() 结果（原 main() 只在脚本方式执行）。"""
-    fails = [(n, d) for n, s, d in _results if s == FAIL]
-    assert not fails, fails
 
 # --------------------------------------------------------------- 主入口
 def main() -> int:

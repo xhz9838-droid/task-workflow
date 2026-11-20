@@ -180,7 +180,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         # 11) 外部回写：Verifier 通过后自动 finish/done，失败入待写队列。
         provider_status = "skipped"
         if args.zentao_finish:
-            provider_status = _zentao_finish_with_notify(args, state, notifier, eid, project, task)
+            provider_status = _zentao_finish_with_notify(args, state, notifier, eid, project, task,
+                                                         report=report)
 
         state.log_event(eid, "status_snapshot",
                         _status_snapshot(agent_state, exit_code, report, attempt,
@@ -328,14 +329,23 @@ def _execute_with_retry(args, cfg, state, notifier, eid, project, task, decision
         time.sleep(delay)
 
 
-def _zentao_finish_with_notify(args, state, notifier, eid, project, task) -> str:
+def _zentao_finish_with_notify(args, state, notifier, eid, project, task, report=None) -> str:
     """Verifier 通过后自动回写禅道 finish/done。工时/日期由调用方提供，失败入待写队列，不改执行结果。
+
+    🔴 完成任务必须带完成内容 + git commit id（取 Verifier 报告的 commit 与改动清单），
+    写入 finished 动作备注，不写任务 desc。
     """
     from zentao_reporter import ZenTaoReporter
 
     if args.consumed is None or args.left is None or not args.finished_date:
         warn("--zentao-finish 需要 --consumed/--left/--finished-date（不推算工时与日期），本次跳过回写")
         return "skipped_missing_fields"
+    commit = str(getattr(report, "commit", "") or "") if report is not None else ""
+    changed = list(getattr(report, "changed_files", []) or []) if report is not None else []
+    summary = "验收通过 %s；改动 %s" % (
+        getattr(report, "overall", "") if report is not None else "",
+        "、".join(changed[:5]) if changed else "（见 final-report）",
+    )
     zr = ZenTaoReporter(state, dry_run=bool(args.dry_run),
                         logger=(lambda m: None if args.quiet else log))
     try:
@@ -347,6 +357,8 @@ def _zentao_finish_with_notify(args, state, notifier, eid, project, task) -> str
             left=args.left,
             finished_date=args.finished_date,
             real_started=args.real_started or None,
+            summary=summary,
+            commit=commit,
             exec_id=str(eid),
         )
         if r.get("ok"):
