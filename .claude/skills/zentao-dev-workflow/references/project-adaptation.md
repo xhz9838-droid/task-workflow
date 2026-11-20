@@ -140,7 +140,7 @@ Agent 定义保持通用。技术栈特定知识来源：
 |---|---|
 | `task_source: none` | 从 `task-context.md` 或人工输入获取任务；跳过进度回写 |
 | `ci: none` | 跳过 CI 阶段；本地 lint/build/test 代替 |
-| `notification: none` | L3 阻塞改在对话中直接询问本人 |
+| `notification: none` | L3 仍必须经 HITL 记录（`mcp__human-decision__request_human_decision`；MCP 不可用时用 `agent-manager/human_decision/cli.py` 创建决策并标记待授权），**禁止**以"对话中直接询问"代替 L3 流程 |
 
 **仍可执行**：需求分析、技术设计、代码开发、测试、代码审查、状态管理、DAG 调度、中断恢复。
 

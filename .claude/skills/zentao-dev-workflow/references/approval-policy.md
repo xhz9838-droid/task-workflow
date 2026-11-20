@@ -46,7 +46,10 @@
 ① 暂停受影响 Agent（其他独立节点继续推进）
 ② 创建 L3 记录（blockers[] 含 id/level/summary/wait_for/resume_steps）
 ③ 保存上下文：Session ID、Workflow/Task ID、Git 分支、Worktree、当前阶段
-④ 经通知渠道发送（scripts/notify.sh）
+④ 发起人工决策：`mcp__human-decision__request_human_decision`（L3 → P0）
+   - 有界等待 300s；超时 → suspended，挂起依赖节点，独立节点继续
+   - MCP 不可用时用 `agent-manager/human_decision/cli.py` 创建决策 + 通知，语义相同
+   - 禁止在对话中直接询问用户代替 L3 流程
    消息必含：project_key、task_id、SessionID、BlockerID、阶段、
             问题描述、影响范围、推荐方案、等待决策项
 ⑤ 等待本人决策（不挂起进程数日）

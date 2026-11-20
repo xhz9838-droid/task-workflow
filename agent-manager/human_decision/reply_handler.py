@@ -218,9 +218,13 @@ class ReplyHandler:
             return ""
         scope = chat_scope or _chat_scope(chat_session_key)
         if source in ("cli", "test"):
-            return "" if not self.cfg.deciders else (
-                "" if not user_id else f"用户 {user_id} 不在授权决策人白名单"
-            )
+            if not self.cfg.deciders:
+                return ""
+            # 配了白名单时必须能证明决策人身份：空 user_id 一律拒绝（不得绕过白名单）
+            if not user_id:
+                return "CLI 回复缺少 user_id，无法校验决策人身份"
+            return "" if user_id in self.cfg.decider_ids() else (
+                f"用户 {user_id} 不在授权决策人白名单")
         if self.cfg.is_authorized(user_id, chat_scope=scope):
             return ""
         if not user_id and scope.startswith("g"):

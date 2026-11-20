@@ -76,27 +76,43 @@ def detect(
     risk: str = "",
     explicit_level: str | DecisionLevel | None = None,
 ) -> DetectionResult:
-    """分级。explicit_level 显式指定时优先（Agent 判断为准，但记录理由）。"""
-    if explicit_level:
-        lvl = DecisionLevel(str(getattr(explicit_level, "value", explicit_level)).upper())
-        return DetectionResult(lvl, "Agent 显式指定", {})
+    """分级。显式 level 与关键词检测取**较高**等级，禁止显式降级 P0。
 
+    兼容 L1/L2/L3（映射见 DecisionLevel.normalize）。
+    """
     text = " ".join([question, background, risk])
     p0 = _hits(text, P0_KEYWORDS)
+    detected: DetectionResult
     if p0:
-        return DetectionResult(
+        detected = DetectionResult(
             DecisionLevel.P0,
             "命中 P0 特征：" + "、".join(k for ks in p0.values() for k in ks[:2]),
             p0,
         )
-    p1 = _hits(text, P1_KEYWORDS)
-    if p1:
-        return DetectionResult(
-            DecisionLevel.P1,
-            "命中 P1 特征：" + "、".join(k for ks in p1.values() for k in ks[:2]),
-            p1,
-        )
-    return DetectionResult(DecisionLevel.P2, "常规任务特征，无需人工介入", {})
+    else:
+        p1 = _hits(text, P1_KEYWORDS)
+        if p1:
+            detected = DetectionResult(
+                DecisionLevel.P1,
+                "命中 P1 特征：" + "、".join(k for ks in p1.values() for k in ks[:2]),
+                p1,
+            )
+        else:
+            detected = DetectionResult(DecisionLevel.P2, "常规任务特征，无需人工介入", {})
+
+    if explicit_level:
+        lvl = DecisionLevel.normalize(explicit_level)
+        if lvl.severity < detected.level.severity:
+            # 显式降级被拒绝：关键词命中更高级别时以更高级别为准
+            return DetectionResult(
+                detected.level,
+                "显式指定 %s，但%s；按 %s 处理（禁止降级）"
+                % (lvl.value, detected.reason, detected.level.value),
+                detected.matched,
+            )
+        return DetectionResult(lvl, "Agent 显式指定 %s（检测：%s）"
+                              % (lvl.value, detected.level.value))
+    return detected
 
 
 # --------------------------------------------------------------- 回复格式（正则）

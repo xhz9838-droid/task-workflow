@@ -53,7 +53,16 @@ def config_dir() -> str:
 
 
 class ConfigError(Exception):
-    """配置缺失或非法——必须人工处理，不猜测。"""
+    """配置缺失或非法——必须人工处理，不猜测。
+
+    code 用于区分可诊断的失败类型：
+        PROJECT_CONFIG_NOT_FOUND / USER_CONFIG_NOT_FOUND / ENV_VARIABLE_MISSING
+        / CONFIG_PARSE_ERROR / CONFIG_MERGE_ERROR
+    """
+
+    def __init__(self, message: str, code: str = "CONFIG_ERROR"):
+        super().__init__(message)
+        self.code = code
 
 
 def _norm_path(path: str) -> str:
@@ -70,8 +79,11 @@ def _read_yaml(path: str):
         else:
             return {}
     if path.endswith(".json"):
-        with open(path, encoding="utf-8") as f:
-            return json.load(f) or {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f) or {}
+        except Exception as e:
+            raise ConfigError("配置文件解析失败：%s（%s）" % (path, e), code="CONFIG_PARSE_ERROR")
     try:
         import yaml  # type: ignore
     except ImportError:
@@ -80,8 +92,11 @@ def _read_yaml(path: str):
             "请执行：pip install pyyaml\n"
             "或将配置另存为同名 .json 文件。" % path
         )
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        raise ConfigError("配置文件解析失败：%s（%s）" % (path, e), code="CONFIG_PARSE_ERROR")
 
 
 def _read_env(path: str = None) -> dict:
@@ -106,6 +121,19 @@ def _read_env(path: str = None) -> dict:
     return out
 
 
+def _assert_vars_defined(path: str, env: dict) -> None:
+    """在合并前按文件检查 ${VAR}（只检查真实配置值，不扫描注释），报错带文件路径。"""
+    alt = re.sub(r"\.ya?ml$", ".json", path)
+    real = path if os.path.isfile(path) else (alt if os.path.isfile(alt) else "")
+    if not real:
+        return
+    data = _read_yaml(real)
+    try:
+        _substitute(data, env, real)
+    except ConfigError as e:
+        raise ConfigError("配置文件 %s：%s" % (real, e), code="ENV_VARIABLE_MISSING")
+
+
 def _substitute(value, env: dict, path_hint: str = ""):
     """递归替换 ${VAR}。未定义变量 → 报错，不猜测。"""
     if isinstance(value, str):
@@ -117,7 +145,7 @@ def _substitute(value, env: dict, path_hint: str = ""):
                 return os.environ[name]
             raise ConfigError(
                 "配置 %s 中的环境变量 ${%s} 未定义。请在 .env 或系统环境变量中定义。"
-                % (path_hint or "config", name)
+                % (path_hint or "config", name), code="ENV_VARIABLE_MISSING"
             )
         return _VAR_RE.sub(rep, value)
     if isinstance(value, dict):
@@ -151,14 +179,17 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
         if _norm_path(declared) != _norm_path(root):
             raise ConfigError(
                 "WORKFLOW_HOME 冲突：.env 声明 %s，但解析结果为 %s。\n"
-                "请修正 .env 或环境变量，避免状态目录分裂。" % (declared, root)
+                "请修正 .env 或环境变量，避免状态目录分裂。" % (declared, root),
+                code="CONFIG_MERGE_ERROR"
             )
     env_full["WORKFLOW_HOME"] = root
 
     merged = {"_env": env, "_root": root}
 
     # 1) 全局
-    wf = _read_yaml(os.path.join(config_dir(), "workflow.yaml"))
+    wf_path = os.path.join(config_dir(), "workflow.yaml")
+    _assert_vars_defined(wf_path, env_full)
+    wf = _read_yaml(wf_path)
     merged = _deep_merge(merged, wf)
 
     # 2) 适配器
@@ -169,7 +200,9 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
         for fn in sorted(os.listdir(adapters_dir)):
             if fn.endswith((".yaml", ".yml", ".json")) and ".example" not in fn:
                 name = os.path.splitext(fn)[0]
-                data = _read_yaml(os.path.join(adapters_dir, fn))
+                fpath = os.path.join(adapters_dir, fn)
+                _assert_vars_defined(fpath, env_full)
+                data = _read_yaml(fpath)
                 merged = _deep_merge(merged, {name: data.get(name, data)})
 
     # 3) 项目
@@ -180,9 +213,10 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
                 raise ConfigError(
                     "项目配置不存在：%s\n"
                     "请复制 config/projects/project.example.yaml 为 %s.yaml 并填写实际值。"
-                    % (p_path, project_key)
+                    % (p_path, project_key), code="PROJECT_CONFIG_NOT_FOUND"
                 )
         else:
+            _assert_vars_defined(p_path, env_full)
             _pd = _read_yaml(p_path)
             # YAML 顶层已含 project: 键则直接合并，否则包一层
             merged = _deep_merge(merged, _pd if "project" in _pd else {"project": _pd})
@@ -195,9 +229,10 @@ def load_config(project_key: str = None, user_id: str = None, *, strict: bool = 
                 raise ConfigError(
                     "人员配置不存在：%s\n"
                     "请复制 config/users/user.example.yaml 为 %s.yaml 并填写实际值。"
-                    % (u_path, user_id)
+                    % (u_path, user_id), code="USER_CONFIG_NOT_FOUND"
                 )
         else:
+            _assert_vars_defined(u_path, env_full)
             _ud = _read_yaml(u_path)
             merged = _deep_merge(merged, _ud if "user" in _ud else {"user": _ud})
             # 通知配置合并：用户级 notification.enabled=true 时，若项目级 notification="none" 则升级
@@ -277,6 +312,29 @@ def adapter_enabled(cfg: dict, name: str) -> bool:
 
 
 # --------------------------------------------------------------- CLI
+# ---- 输出脱敏：键名命中敏感词 → 值替换为 ***，URL 内嵌凭据同样掩码
+_SENSITIVE_KEY_RE = re.compile(
+    r"(token|password|passwd|secret|api[_-]?key|apikey|access[_-]?key|"
+    r"private[_-]?key|credential|authorization)", re.I)
+_URL_USERINFO_RE = re.compile(r"(://[^/@:\s]+):([^/@\s]+)@")
+
+
+def _redact(obj):
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if _SENSITIVE_KEY_RE.search(str(k)) and v not in (None, "", False):
+                out[k] = "***"
+            else:
+                out[k] = _redact(v)
+        return out
+    if isinstance(obj, list):
+        return [_redact(v) for v in obj]
+    if isinstance(obj, str):
+        return _URL_USERINFO_RE.sub(r"\1:***@", obj)
+    return obj
+
+
 def main(argv):
     if len(argv) < 3:
         print(__doc__)
@@ -286,30 +344,38 @@ def main(argv):
     try:
         cfg = load_config(project_key, user_id, strict=(cmd == "validate"))
     except ConfigError as e:
-        print("❌ 配置错误：%s" % e)
+        code = getattr(e, "code", "CONFIG_ERROR")
+        print(json.dumps({"error": str(e), "code": code}, ensure_ascii=False))
         return 3
     if cmd == "show":
         safe = {k: v for k, v in cfg.items() if not k.startswith("_")}
-        # 脱敏
-        for sens in ("token", "password", "secret", "key"):
-            if sens in json.dumps(safe, default=str).lower():
-                break
-        print(json.dumps(safe, ensure_ascii=False, indent=1, default=str))
+        print(json.dumps(_redact(safe), ensure_ascii=False, indent=1, default=str))
         return 0
     if cmd == "validate":
         errs = []
         pk = get(cfg, "project.key")
         if pk != project_key:
             errs.append("project.key(%s) 与文件名(%s) 不一致" % (pk, project_key))
+        # 仓库路径：用户 project_paths 优先（与 project_resolver 一致）
+        try:
+            from project_resolver import repo_paths_for
+            paths = repo_paths_for(cfg, user_id) if user_id else {}
+        except Exception:
+            paths = {}
         for r in get(cfg, "project.repositories", []) or []:
-            p = r.get("path")
+            key = r.get("key")
+            p = paths.get(key) or r.get("path")
             if not p:
-                errs.append("仓库 %s 缺 path" % r.get("key"))
+                errs.append("仓库 %s 缺 path" % key)
             elif not os.path.isdir(p):
-                errs.append("仓库 %s 路径不存在：%s" % (r.get("key"), p))
+                errs.append("仓库 %s 路径不存在：%s" % (key, p))
         for a in enabled_agents(cfg):
-            f = os.path.join(workflow_root(), ".claude", "agents", a + ".md")
-            if not os.path.exists(f):
+            candidates = [
+                os.path.join(workflow_root(), ".claude", "agents", a + ".md"),
+                os.path.join(workflow_root(), "agents", a + ".md"),
+                os.path.join(workflow_root(), "skill", "agents", a + ".md"),
+            ]
+            if not any(os.path.exists(f) for f in candidates):
                 errs.append("启用的 Agent 缺定义：%s" % a)
         # 集成名 → 适配器配置键（integrations 的值是供应商名，适配器键是集成名）
         _ad_name = {"task_source": "zentao", "ci": "jenkins", "notification": "notification"}

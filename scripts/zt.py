@@ -41,8 +41,16 @@ except Exception:
 sys.path.insert(0, SKILLS)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from zentao._shared.client_api import ZenTaoClient, load_config  # noqa: E402
-from zentao._shared.user_resolver import extract_account  # noqa: E402
+try:
+    from zentao._shared.client_api import ZenTaoClient, load_config  # noqa: E402
+    from zentao._shared.user_resolver import extract_account  # noqa: E402
+except ImportError as _e:
+    sys.stderr.write(
+        "❌ 缺少禅道 Skill 依赖：%s\n"
+        "   请安装 zen tao 技能（~/.claude/skills/zentao），或用 ZENTAO_SKILL_DIR 指向其父目录。\n"
+        "   依赖检查：python -I scripts/doctor.py\n" % _e
+    )
+    raise SystemExit(3)
 from audit import audit  # noqa: E402
 
 FIELDS = ("id", "name", "status", "pri", "type", "project", "execution", "executionName",

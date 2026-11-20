@@ -317,6 +317,12 @@ def test_util() -> None:
     check("truncate 短文本不截断", truncate("abc", 10) == "abc")
 
 
+def test_all_checks_passed() -> None:
+    """pytest 收集时校验 check() 结果（原 main() 只在脚本方式执行）。"""
+    fails = [(n, d) for n, s, d in _results if s == FAIL]
+    assert not fails, fails
+
+
 # --------------------------------------------------------------- 主入口
 def main() -> int:
     print("P11.1 CLI 测试")

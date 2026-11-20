@@ -49,7 +49,13 @@ def _now() -> str:
 
 
 def _exec_dir(project: str, task: str) -> str:
-    return os.path.join(_ROOT, "execution", project, str(task))
+    """执行目录锚定工作流根（WORKFLOW_HOME / 安装记录），不写死脚本所在仓库。"""
+    try:
+        from _home import resolve_workflow_home
+        root = resolve_workflow_home()[0]
+    except Exception:
+        root = _ROOT
+    return os.path.join(root, "execution", project, str(task))
 
 
 def _load_qa_reports(project: str, task: str) -> list[dict]:

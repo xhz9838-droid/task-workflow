@@ -64,7 +64,7 @@ def build_plan(*, project_key: str, name: str, zentao_project_id="", product_ids
     registry = load_registry(root)
     dup_key = [p.get("key") for p in registry if str(p.get("key") or "") == project_key]
     if dup_key:
-        raise RegisterError("project_key 已存在：%s（如需更新请用 update 模式，不覆盖重建）" % project_key)
+        raise RegisterError("project_key 已存在：%s（请使用其他 key，或先人工删除现有配置）" % project_key)
 
     zid = str(zentao_project_id or "").strip()
     if zid:
@@ -222,6 +222,27 @@ def _atomic_write_yaml(path: str, content: dict) -> None:
 
 
 # --------------------------------------------------------------- CLI
+def _parse_repo_spec(item: str) -> tuple[str, dict]:
+    """解析 key=path[:role[:remote]]，兼容 Windows 盘符冒号与 https:// 远程地址。"""
+    key, _, rest = item.partition("=")
+    key = key.strip()
+    rest = rest.strip()
+    if not key or not rest:
+        raise RegisterError("非法 --repo 参数：%r（格式 key=path[:role[:remote]]）" % item)
+    drive = ""
+    if len(rest) >= 2 and rest[0].isalpha() and rest[1] == ":" and \
+            (len(rest) == 2 or rest[2] in ("/", "\\")):
+        drive, rest = rest[:2], rest[2:]
+    # 路径在第一个冒号处结束；其后为 role[:remote]（remote 可含 ://）
+    if ":" in rest:
+        path_part, tail = rest.split(":", 1)
+    else:
+        path_part, tail = rest, ""
+    role, _, remote = tail.partition(":")
+    return key, {"path": (drive + path_part).strip(), "role": role.strip(),
+                 "remote_url": remote.strip()}
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="project_register", description="项目注册（plan/apply 两段式）")
     sub = p.add_subparsers(dest="cmd")
@@ -246,10 +267,8 @@ def main(argv=None) -> int:
         if args.cmd == "plan":
             repos = {}
             for item in args.repo:
-                key, _, rest = item.partition("=")
-                path, _, tail = rest.partition(":")
-                role, _, remote = tail.partition(":")
-                repos[key.strip()] = {"path": path.strip(), "role": role.strip(), "remote_url": remote.strip()}
+                key, spec = _parse_repo_spec(item)
+                repos[key] = spec
             plan = build_plan(
                 project_key=args.project_key, name=args.name,
                 zentao_project_id=args.zentao_project_id,
@@ -258,6 +277,8 @@ def main(argv=None) -> int:
             )
             body = json.dumps(plan, ensure_ascii=False, indent=2)
             if args.out:
+                parent = os.path.dirname(os.path.abspath(args.out))
+                os.makedirs(parent, exist_ok=True)
                 with open(args.out, "w", encoding="utf-8") as f:
                     f.write(body)
             print(body)

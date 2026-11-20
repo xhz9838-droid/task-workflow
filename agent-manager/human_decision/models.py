@@ -25,11 +25,30 @@ from typing import Any, Optional
 
 
 class DecisionLevel(str, Enum):
-    """P0 必须人工批准 / P1 建议人工决策 / P2 Agent 自主处理（不进入流程）"""
+    """P0 必须人工批准 / P1 建议人工决策 / P2 Agent 自主处理（不进入流程）
+
+    同时兼容工作流审批分级 L1/L2/L3（见 approval-policy.md）：
+        L3 → P0（重大决策，必须人工）
+        L2 → P1（Agent 应在授权内自决；显式升级人工时按 P1）
+        L1 → P2（常规问题，不得进入人工流程）
+    """
 
     P0 = "P0"
     P1 = "P1"
     P2 = "P2"
+
+    @classmethod
+    def normalize(cls, value: str | "DecisionLevel") -> "DecisionLevel":
+        """把 L1/L2/L3 或 P0/P1/P2 统一为 P 级；非法值抛 ValueError。"""
+        raw = str(getattr(value, "value", value)).strip().upper()
+        alias = {"L3": "P0", "L2": "P1", "L1": "P2"}
+        raw = alias.get(raw, raw)
+        return cls(raw)
+
+    @property
+    def severity(self) -> int:
+        """数值越大越严重（P0=3, P1=2, P2=1），用于禁止显式降级。"""
+        return {"P0": 3, "P1": 2, "P2": 1}[self.value]
 
 
 class DecisionStatus(str, Enum):

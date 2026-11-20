@@ -36,14 +36,15 @@ nodes:
     status: pending
 
   - id: A3
-    name: "人工设计确认"
+    name: "设计确认（L2 自动 / L3 人工）"
     agent: main
     depends_on: [A2]
     files_owned: []
     deliverables:
       - "decisions.md"
     acceptance:
-      - "收到明确设计确认（L3 项逐项决策）"
+      - "L2 决策在授权内自决并写入 decisions.md（不调用 HITL）"
+      - "仅 L3 经 request_human_decision 等待；无 L3 时本节点自动完成"
     status: pending
 
   - id: B1

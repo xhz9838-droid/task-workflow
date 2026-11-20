@@ -7,6 +7,8 @@ zentao:
   manage_script: ""
   write_guard: true
   progress_mode: append
-  allow_finish: human_only
-  allow_close: never
+  # 与 CLAUDE.md / SKILL 一致：Verifier 门禁通过后自动 finish；关闭条件满足后自动 close
+  # （zt.py 仍强制校验 can_finish / can_close 与读回确认；不满足则暂缓）
+  allow_finish: auto_after_gate
+  allow_close: auto_after_gate
   verify_owner: true

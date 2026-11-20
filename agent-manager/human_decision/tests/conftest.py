@@ -11,7 +11,8 @@ import pytest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PKG = os.path.dirname(_HERE)          # human_decision/
 _PARENT = os.path.dirname(_PKG)        # agent-manager/
-for _p in (_PARENT, _PKG):
+# 顺序：_PARENT 先于 _PKG，保证裸模块名 `models`/`cli` 解析到 agent-manager 侧
+for _p in (_PKG, _PARENT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

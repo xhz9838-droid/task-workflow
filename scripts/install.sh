@@ -30,24 +30,20 @@ TS="$(date +%Y%m%d%H%M%S)"
 
 MODE="install"
 LINK=0
+WITH_MCP=0
 for a in "$@"; do
   case "$a" in
     --uninstall) MODE="uninstall" ;;
     --link) LINK=1 ;;
+    --with-mcp) WITH_MCP=1 ;;
   esac
 done
 
+# 本工作流安装的 Skill（zentao-dev-workflow 主体 + 项目注册引导）
+EXTRA_SKILLS=(workflow-register-project)
+
 # dw- 前缀避免覆盖用户已有的同名个人 Agent（安装/卸载不破坏用户文件）
 AGENT_NAMES=(dw-architect dw-database dw-java-backend dw-web-frontend dw-mobile-app dw-qa-engineer dw-integration-reviewer)
-
-backup_if_exists() {
-  local f="$1"
-  if [[ -e "$f" && ! -L "$f" ]]; then
-    local bak="$f.bak.$TS"
-    cp -r "$f" "$bak"
-    echo "  ⚠ 已备份原有 → $(basename "$bak")"
-  fi
-}
 
 do_install() {
   echo "== 安装 zentao-dev-workflow 到 $USER_CLAUDE =="
@@ -67,6 +63,18 @@ do_install() {
     cp -r "$SKILL_SRC" "$dst"
     echo "  ✓ Skill 已安装 → $dst"
   fi
+
+  # 其他随工作流交付的 Skill（项目注册引导）
+  for s in "${EXTRA_SKILLS[@]}"; do
+    local src="$WORKFLOW_HOME/.claude/skills/$s"
+    [[ -d "$src" ]] || src="$WORKFLOW_HOME/skill/$s"
+    if [[ -d "$src" ]]; then
+      local d2="$USER_CLAUDE/skills/$s"
+      rm -rf "$d2"
+      cp -r "$src" "$d2"
+      echo "  ✓ Skill 已安装 → $d2"
+    fi
+  done
 
   # 兼容别名（§五 命名）
   local alias_dst="$USER_CLAUDE/skills/dev-workflow"
@@ -94,6 +102,10 @@ do_install() {
   echo "安装完成。在任意项目根目录启动 Claude Code 后可调用："
   echo "  /$SKILL_NAME <project_key> <task_id>"
   echo ""
+  echo "工作流根（含 scripts/config/execution）：$WORKFLOW_HOME"
+  echo "自检：python -I \"$WORKFLOW_HOME/scripts/doctor.py\""
+  echo "L3 决策需 HITL MCP（可选）：重新运行 $0 --with-mcp，或手动注册 user scope。"
+  echo ""
   echo "配置：把 config/*.example.yaml 复制为实际文件并填写；凭据放 .env。"
 }
 
@@ -113,20 +125,64 @@ write_install_record() {
   fi
   printf '%s\n' "$native" > "$record"
   echo "  ✓ 工作流根安装记录 → $record ($native)"
+
+  # 用户级工作流配置：只补 workflow_home，保留用户已有字段（身份等）
+  local ucfg="$USER_CLAUDE/zentao-dev-workflow.json"
+  python -I - "$ucfg" "$native" <<'PY'
+import json, os, sys
+path, home = sys.argv[1], sys.argv[2]
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f) or {}
+    except Exception:
+        data = {}
+data["workflow_home"] = home
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=1)
+PY
+  echo "  ✓ 用户级工作流配置 → $ucfg"
+
+  # HITL MCP（用户级）：业务项目目录下也能使用 L3 决策工具（可选）
+  if [[ $WITH_MCP -eq 1 ]]; then
+    local server="$WORKFLOW_HOME/agent-manager/human_decision/mcp_server.py"
+    if command -v claude >/dev/null 2>&1; then
+      if claude mcp get human-decision >/dev/null 2>&1; then
+        echo "  ✓ HITL MCP 已注册（未重复写入）"
+      else
+        claude mcp add --scope user human-decision -- python "$server" >/dev/null 2>&1 \
+          && echo "  ✓ HITL MCP 已注册（user scope）" \
+          || echo "  ⚠ HITL MCP 注册失败，请手动执行：claude mcp add --scope user human-decision -- python \"$server\""
+      fi
+    else
+      echo "  ⚠ 未找到 claude CLI，跳过 MCP 注册。手动：claude mcp add --scope user human-decision -- python \"$server\""
+    fi
+  fi
 }
 
 do_uninstall() {
   echo "== 卸载 $SKILL_NAME =="
-  for d in "$USER_CLAUDE/skills/$SKILL_NAME" "$USER_CLAUDE/skills/dev-workflow"; do
-    if [[ -e "$d" ]]; then rm -rf "$d"; echo "  ✓ 移除 $d"; fi
+  local d="$USER_CLAUDE/skills/$SKILL_NAME"
+  if [[ -e "$d" ]]; then rm -rf "$d"; echo "  ✓ 移除 $d"; fi
+  for s in "${EXTRA_SKILLS[@]}"; do
+    local ds="$USER_CLAUDE/skills/$s"
+    if [[ -e "$ds" ]]; then rm -rf "$ds"; echo "  ✓ 移除 $ds"; fi
   done
+  # 兼容别名只在确实是本工作流创建的链接时才删除（不误删用户同名 Skill）
+  local alias_dst="$USER_CLAUDE/skills/dev-workflow"
+  if [[ -L "$alias_dst" ]]; then
+    rm -rf "$alias_dst"; echo "  ✓ 移除别名 $alias_dst"
+  elif [[ -e "$alias_dst" ]]; then
+    echo "  ⚠ 保留 $alias_dst（非软链，可能为用户自有 Skill）"
+  fi
   for n in "${AGENT_NAMES[@]}"; do
     local af="$USER_CLAUDE/agents/$n.md"
     if [[ -e "$af" ]]; then rm -f "$af"; echo "  ✓ 移除 $af"; fi
   done
   local record="$USER_CLAUDE/zentao-dev-workflow.home"
   if [[ -e "$record" ]]; then rm -f "$record"; echo "  ✓ 移除 $record"; fi
-  echo "卸载完成（用户其他 Skill/Agent 未动）。"
+  echo "卸载完成（用户其他 Skill/Agent 未动；config/execution/.env 保留）。"
 }
 
 if [[ "$MODE" == "uninstall" ]]; then do_uninstall; else do_install; write_install_record; fi

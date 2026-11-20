@@ -405,6 +405,12 @@ def test_zentao_finish_policy() -> None:
     check("配置 allow_auto_close=true", zc.get("allow_auto_close") is True)
     check("配置 require_readback=true", zc.get("require_readback") is True)
 
+
+def test_all_checks_passed() -> None:
+    """pytest 收集时校验 check() 结果（原 main() 只在脚本方式执行）。"""
+    fails = [(n, d) for n, s, d in _results if s == FAIL]
+    assert not fails, fails
+
 # --------------------------------------------------------------- 主入口
 def main() -> int:
     print("P11 Agent Execution Manager — 集成测试")

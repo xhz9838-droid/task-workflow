@@ -125,7 +125,8 @@ def build_server():
             recommendation: 推荐方案 id
             recommend_reason: 推荐原因
             risk: 不确认的风险
-            level: 决策等级 P0/P1/P2（可空，自动检测；P0=必须批准）
+            level: 决策等级 L3/P0（必须人工）或 P1（建议人工）；可空，自动检测。
+                   L1/L2/P2 属于自主处理，传这些值会被拒绝（应写 decisions.md 后继续）
             project_key: 项目 key（可空）
             wait_seconds: 有界等待秒数（0=用配置默认 300s）
 

@@ -125,7 +125,12 @@ def cmd_plan(args) -> int:
     """计算 DAG 可执行节点：pending + 依赖全 done + agent 启用 + 未 L3 阻塞。
 
     状态源：tasks.yaml（DAG 结构）+ SQLite node_dispatches（节点当前态）。
-    输出 JSON：{executable: [...], blocked_by_l3: [...], in_progress: [...]}
+    输出 JSON：{executable, in_progress, blocked, done}。
+
+    硬性规则：
+      - WAITING_HUMAN / UNVERIFIED / BLOCKED 节点**不得**自动重派，只进 blocked。
+      - FAILED / RETRY_PENDING 在重试预算内可重派；超出上限进 blocked。
+      - 依赖未满足的节点不出现（既不可执行也不阻塞其它节点）。
     """
     cfg = load_config(args.project, strict=False)
     exec_dir = exec_root(cfg, args.project, str(args.task_id))
@@ -135,15 +140,24 @@ def cmd_plan(args) -> int:
     for k, v in (cfg.get("project", {}).get("agents", {}) or {}).items():
         if v is True:
             enabled.add(k)
+    # 重试预算：max_attempts 次重试 = 最多 max_attempts+1 次派发尝试
+    retry_cfg = cfg.get("retry", {}) or {}
+    max_attempts = int(retry_cfg.get("max_attempts", 2)) + 1
     state = StateManager(args.db)
     try:
         eid = _resolve_execution_id(state, args.project, str(args.task_id))
+        all_disps = state.list_node_dispatches(eid)
+        attempts_count: dict[str, int] = {}
+        for d in all_disps:
+            attempts_count[d["node_id"]] = attempts_count.get(d["node_id"], 0) + 1
         done_ids = set()
         for n in nodes:
             disp = state.latest_node_dispatch(eid, n["id"])
             if disp and disp["status"] == NodeState.DONE.value:
                 done_ids.add(n["id"])
         executable, in_progress, blocked = [], [], []
+        exec_rec = state.get_execution(args.project, str(args.task_id))
+        exec_status = (exec_rec or {}).get("workflow_status") or ""
         for n in nodes:
             disp = state.latest_node_dispatch(eid, n["id"])
             nstat = _node_status_from_dispatch(disp)
@@ -157,16 +171,40 @@ def cmd_plan(args) -> int:
                                     "attempt_id": disp["attempt_id"] if disp else None})
                 continue
             if nstat == "waiting_human":
-                blocked.append({"node": n["id"], "reason": "等待人工决策"})
+                # 任务仍处 WAITING_HUMAN → 阻塞；人工决策已完成（任务已恢复 RUNNING 等）
+                # 则允许重派该节点，恢复原工作流。
+                if exec_status == "WAITING_HUMAN":
+                    blocked.append({"node": n["id"], "reason": "等待人工决策（WAITING_HUMAN）"})
+                    continue
+                if not deps_done:
+                    continue
+                if not agent_on:
+                    blocked.append({"node": n["id"], "reason": "agent 未启用"})
+                    continue
+                executable.append({"node": n["id"], "agent": n.get("agent"), "name": n.get("name"),
+                                   "attempts": attempts_count.get(n["id"], 0),
+                                   "note": "人工决策已完成，恢复派发"})
+                continue
+            if nstat == "unverified":
+                blocked.append({"node": n["id"], "reason": "执行凭证 UNVERIFIED，需人工确认后再派发"})
+                continue
             if nstat == "blocked":
                 blocked.append({"node": n["id"], "reason": "node BLOCKED"})
                 continue
-            if deps_done and agent_on:
-                executable.append({"node": n["id"], "agent": n.get("agent"), "name": n.get("name")})
-            elif not deps_done:
+            if nstat in ("failed", "retry_pending"):
+                if attempts_count.get(n["id"], 0) >= max_attempts:
+                    blocked.append({"node": n["id"],
+                                    "reason": "重试次数耗尽（%d/%d）" % (
+                                        attempts_count.get(n["id"], 0), max_attempts)})
+                    continue
+                # 预算内可重派，继续走下面的依赖/Agent 检查
+            if not deps_done:
                 continue  # 依赖未满足，不计入可执行
-            elif not agent_on:
+            if not agent_on:
                 blocked.append({"node": n["id"], "reason": "agent 未启用"})
+                continue
+            executable.append({"node": n["id"], "agent": n.get("agent"), "name": n.get("name"),
+                               "attempts": attempts_count.get(n["id"], 0)})
         out = {"execution_id": eid, "executable": executable, "in_progress": in_progress,
                "blocked": blocked, "done": sorted(done_ids)}
         print(json.dumps(out, ensure_ascii=False, indent=2))
@@ -192,10 +230,25 @@ def cmd_register_dispatch(args) -> int:
         if latest and latest["status"] in (NodeState.DISPATCHING.value, NodeState.RUNNING.value):
             sys.stderr.write(
                 "[BLOCKED] 节点 %s 已有未终结 attempt %s（status=%s）。"
-                " 先 record-result 再 register-dispatch 新 attempt，或 --force-new-attempt。\n"
+                " 先 record-result 再 register-dispatch 新 attempt。\n"
                 % (args.node, latest["attempt_id"], latest["status"])
             )
             return 4
+        # UNVERIFIED 必须人工确认；WAITING_HUMAN 在任务仍等待人工时禁止重派。
+        if latest and latest["status"] == NodeState.UNVERIFIED.value and not args.force_new_attempt:
+            sys.stderr.write(
+                "[BLOCKED] 节点 %s 最新状态为 UNVERIFIED，需人工确认执行凭证后才能重派"
+                "（确认后加 --force-new-attempt）。\n" % args.node
+            )
+            return 4
+        if latest and latest["status"] == NodeState.WAITING_HUMAN.value and not args.force_new_attempt:
+            exec_rec = state.get_execution(args.project, str(args.task_id)) or {}
+            if (exec_rec.get("workflow_status") or "") == "WAITING_HUMAN":
+                sys.stderr.write(
+                    "[BLOCKED] 节点 %s 仍在等待人工决策（任务 WAITING_HUMAN）；"
+                    "决策完成后再派发。\n" % args.node
+                )
+                return 4
         attempt_id = args.attempt_id or _new_attempt_id(args.node)
         backend = ExecutionBackend(args.backend)
         nd = NodeDispatch(
@@ -277,9 +330,17 @@ def cmd_record_result(args) -> int:
             "status": status.value, "error_code": args.error_code,
             "error": (args.error or "")[:200],
         }, project_key=args.project)
-        print(json.dumps({"recorded": True, "node": args.node, "attempt_id": args.attempt,
-                          "status": rec["status"], "finished_at": rec["finished_at"]},
-                         ensure_ascii=False, indent=2))
+        # 自动刷新 run-state.json 只读快照（失败不影响已记录的执行结果）
+        export_info = None
+        try:
+            export_info = _export_snapshot(args.project, str(args.task_id), args.db)
+        except Exception as e:
+            sys.stderr.write("[WARN] run-state 快照刷新失败：%s\n" % e)
+        payload = {"recorded": True, "node": args.node, "attempt_id": args.attempt,
+                   "status": rec["status"], "finished_at": rec["finished_at"]}
+        if export_info:
+            payload["run_state"] = export_info["path"]
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     finally:
         state.close()
@@ -352,84 +413,160 @@ def cmd_reconcile(args) -> int:
 
 
 # --------------------------------------------------------------- export-state
+def _write_snapshot(state: StateManager, eid: int, project_key: str, task_id: str) -> dict:
+    """从 SQLite 重建 run-state.json 快照并原子写入（不打印、不审计）。"""
+    cfg = load_config(project_key, strict=False)
+    exec_dir = exec_root(cfg, project_key, str(task_id))
+    exec_rec = state.get_execution(project_key, str(task_id))
+    disps = state.list_node_dispatches(eid)
+    events = state.get_events(eid)
+    # 读现有 run-state.json 作底（保留 tasks.yaml 引用、blockers、checkpoints 历史等
+    # 非 DAG 节点态字段——这些不是执行凭证，迁移期兼容）
+    rs_path = os.path.join(exec_dir, "run-state.json")
+    base = {}
+    if os.path.exists(rs_path):
+        try:
+            with open(rs_path, encoding="utf-8") as f:
+                base = json.load(f)
+        except Exception:
+            base = {}
+    dag = _load_tasks_yaml(exec_dir)
+    nodes_def = {n["id"]: n for n in dag.get("nodes", [])}
+    by_node: dict[str, list[dict]] = {}
+    for d in disps:
+        by_node.setdefault(d["node_id"], []).append(d)
+    out_nodes = []
+    for nid, ndef in nodes_def.items():
+        attempts = sorted(by_node.get(nid, []), key=lambda x: x["id"])
+        latest = attempts[-1] if attempts else None
+        node = {
+            "id": nid, "agent": ndef.get("agent"),
+            "status": _node_status_from_dispatch(latest),
+            "depends_on": ndef.get("depends_on", []) or [],
+            "name": ndef.get("name"),
+            "note": ndef.get("note"),
+        }
+        if latest:
+            node["attempt_id"] = latest["attempt_id"]
+            node["agent_id"] = latest.get("agent_id")
+            node["pid"] = latest.get("pid")
+            node["execution_backend"] = latest.get("execution_backend")
+            node["dispatch_started_at"] = latest.get("dispatch_started_at")
+            node["started_at"] = latest.get("started_at")
+            node["finished_at"] = latest.get("finished_at")
+            node["last_seen_at"] = latest.get("last_seen_at")
+            node["error"] = latest.get("error_message")
+            node["attempts"] = len(attempts)
+        else:
+            node["attempts"] = 0
+        out_nodes.append(node)
+    snapshot = base
+    snapshot["schema_version"] = snapshot.get("schema_version", 2)
+    snapshot["project_key"] = project_key
+    snapshot["task_id"] = str(task_id)
+    snapshot["stage"] = exec_rec.get("current_stage") if exec_rec else snapshot.get("stage")
+    snapshot["updated_at"] = _now()
+    snapshot["state_source"] = "sqlite"  # 标记唯一真相源
+    snapshot["execution_id"] = eid
+    snapshot["dag"] = {"file": "tasks.yaml", "nodes": out_nodes}
+    snapshot["execution_events_count"] = len(events)
+    tmp = rs_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False)
+    os.replace(tmp, rs_path)
+    return {"path": rs_path, "nodes": len(out_nodes), "execution_id": eid,
+            "events": len(events)}
+
+
+def _export_snapshot(project_key: str, task_id: str, db: str) -> dict:
+    """独立导出快照（供 record-result 自动刷新与 export-state 共用）。"""
+    state = StateManager(db)
+    try:
+        eid = _resolve_execution_id(state, project_key, str(task_id))
+        info = _write_snapshot(state, eid, project_key, str(task_id))
+    finally:
+        state.close()
+    audit(str(task_id), "dispatch_export_state", {
+        "project_key": project_key, "nodes": info["nodes"],
+        "events": info["events"], "path": info["path"],
+    }, project_key=project_key)
+    return info
+
+
 def cmd_export_state(args) -> int:
     """从 SQLite 生成 run-state.json（只读快照）。原子写，失败不损原文件。
 
     SQLite 提交成功但 JSON 导出失败时以 SQLite 为准——重跑本命令即可重建。
     """
+    info = _export_snapshot(args.project, args.task_id, args.db)
+    print(json.dumps({"exported": True, "path": info["path"], "nodes": info["nodes"],
+                      "execution_id": info["execution_id"]}, ensure_ascii=False, indent=2))
+    return 0
+
+
+# --------------------------------------------------------------- flush-writes
+def cmd_flush_writes(args) -> int:
+    """重试 pending_writes 队列（禅道 progress/finish/close）。"""
+    from zentao_reporter import ZenTaoReporter
+    state = StateManager(args.db)
+    try:
+        reporter = ZenTaoReporter(state)
+        res = reporter.flush_pending(str(args.task_id))
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return 0 if res.get("failed", 0) == 0 else 1
+    finally:
+        state.close()
+
+
+# --------------------------------------------------------------- gate
+def cmd_gate(args) -> int:
+    """统一终止门禁：全部节点 DONE 且无等待人工/未刷写回写/存活 Agent 时才允许结束。
+
+    exit 0 = 可以结束；exit 1 = 不可结束（reasons 说明原因）。
+    """
     cfg = load_config(args.project, strict=False)
     exec_dir = exec_root(cfg, args.project, str(args.task_id))
+    dag = _load_tasks_yaml(exec_dir)
+    nodes = dag.get("nodes", [])
     state = StateManager(args.db)
     try:
         eid = _resolve_execution_id(state, args.project, str(args.task_id))
-        exec_rec = state.get_execution(args.project, str(args.task_id))
-        disps = state.list_node_dispatches(eid)
-        events = state.get_events(eid)
-        # 读现有 run-state.json 作底（保留 tasks.yaml 引用、blockers、checkpoints 历史等
-        # 非 DAG 节点态字段——这些不是执行凭证，迁移期兼容）
-        rs_path = os.path.join(exec_dir, "run-state.json")
-        base = {}
-        if os.path.exists(rs_path):
-            try:
-                with open(rs_path, encoding="utf-8") as f:
-                    base = json.load(f)
-            except Exception:
-                base = {}
-        # 读 tasks.yaml 取节点定义（name/agent/depends_on/note/deliverables）
-        dag = _load_tasks_yaml(exec_dir)
-        nodes_def = {n["id"]: n for n in dag.get("nodes", [])}
-        # 用 SQLite node_dispatches 重写 dag.nodes[].status + 执行凭证
-        # 每个 node 取最新 attempt
-        by_node: dict[str, list[dict]] = {}
-        for d in disps:
-            by_node.setdefault(d["node_id"], []).append(d)
-        out_nodes = []
-        for nid, ndef in nodes_def.items():
-            attempts = sorted(by_node.get(nid, []), key=lambda x: x["id"])
-            latest = attempts[-1] if attempts else None
-            node = {
-                "id": nid, "agent": ndef.get("agent"),
-                "status": _node_status_from_dispatch(latest),
-                "depends_on": ndef.get("depends_on", []) or [],
-                "name": ndef.get("name"),
-                "note": ndef.get("note"),
-            }
-            if latest:
-                node["attempt_id"] = latest["attempt_id"]
-                node["agent_id"] = latest.get("agent_id")
-                node["pid"] = latest.get("pid")
-                node["execution_backend"] = latest.get("execution_backend")
-                node["dispatch_started_at"] = latest.get("dispatch_started_at")
-                node["started_at"] = latest.get("started_at")
-                node["finished_at"] = latest.get("finished_at")
-                node["last_seen_at"] = latest.get("last_seen_at")
-                node["error"] = latest.get("error_message")
-                node["attempts"] = len(attempts)
-            else:
-                node["attempts"] = 0
-            out_nodes.append(node)
-        snapshot = base
-        snapshot["schema_version"] = snapshot.get("schema_version", 2)
-        snapshot["project_key"] = args.project
-        snapshot["task_id"] = str(args.task_id)
-        snapshot["stage"] = exec_rec.get("current_stage") if exec_rec else snapshot.get("stage")
-        snapshot["updated_at"] = _now()
-        snapshot["state_source"] = "sqlite"  # 标记唯一真相源
-        snapshot["execution_id"] = eid
-        snapshot["dag"] = {"file": "tasks.yaml", "nodes": out_nodes}
-        snapshot["execution_events_count"] = len(events)
-        # 原子写
-        tmp = rs_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(snapshot, f, ensure_ascii=False)
-        os.replace(tmp, rs_path)
-        audit(str(args.task_id), "dispatch_export_state", {
-            "project_key": args.project, "nodes": len(out_nodes),
-            "events": len(events), "path": rs_path,
-        }, project_key=args.project)
-        print(json.dumps({"exported": True, "path": rs_path, "nodes": len(out_nodes),
-                          "execution_id": eid}, ensure_ascii=False, indent=2))
-        return 0
+        exec_rec = state.get_execution(args.project, str(args.task_id)) or {}
+        reasons = []
+        node_states = {}
+        for n in nodes:
+            disp = state.latest_node_dispatch(eid, n["id"])
+            st = _node_status_from_dispatch(disp)
+            node_states[n["id"]] = st
+        if not nodes:
+            reasons.append({"code": "NO_DAG", "detail": "tasks.yaml 无节点定义"})
+        incomplete = {k: v for k, v in node_states.items() if v != "done"}
+        if incomplete:
+            reasons.append({"code": "NODE_INCOMPLETE", "detail": incomplete})
+        waiting = sorted(k for k, v in node_states.items() if v == "waiting_human")
+        if waiting:
+            reasons.append({"code": "WAITING_HUMAN", "detail": waiting})
+        if (exec_rec.get("workflow_status") or "") == "WAITING_HUMAN":
+            reasons.append({"code": "TASK_WAITING_HUMAN",
+                            "detail": "execution 处于 WAITING_HUMAN"})
+        live = state.find_live_agent(eid)
+        if live:
+            reasons.append({"code": "LIVE_AGENT", "detail": {
+                "agent_id": live.get("agent_id"), "status": live.get("status")}})
+        pending = state.get_pending_writes(str(args.task_id))
+        if pending:
+            reasons.append({"code": "PENDING_WRITES",
+                            "detail": len(pending)})
+        out = {"ok": not reasons, "execution_id": eid,
+               "nodes": node_states, "pending_writes": len(pending),
+               "reasons": reasons}
+        if not reasons and getattr(args, "finalize", False):
+            state.update_execution(eid, workflow_status="COMPLETED",
+                                   current_stage="completed", finished_at=_now())
+            state.log_event(eid, "workflow_completed", {"gate": "ok"})
+            out["finalized"] = "COMPLETED"
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0 if not reasons else 1
     finally:
         state.close()
 
@@ -470,6 +607,8 @@ def build_parser() -> argparse.ArgumentParser:
     sr.add_argument("--agent", required=True)
     sr.add_argument("--backend", choices=["claude_tool", "cli_subprocess"], default="claude_tool")
     sr.add_argument("--attempt-id", default="", help="自定义 attempt_id（默认自动生成）")
+    sr.add_argument("--force-new-attempt", action="store_true",
+                    help="人工确认后允许重派 UNVERIFIED/WAITING_HUMAN 节点")
     sr.set_defaults(func=cmd_register_dispatch)
 
     sc = sub.add_parser("confirm-running", help="主控取得 agent_id/pid 后确认 RUNNING")
@@ -497,6 +636,14 @@ def build_parser() -> argparse.ArgumentParser:
     ss = sub.add_parser("status", help="查节点/Agent 执行状态")
     ss.add_argument("--node", default="")
     ss.set_defaults(func=cmd_status)
+
+    sg = sub.add_parser("gate", help="统一终止门禁（全部节点 DONE 才允许结束）")
+    sg.add_argument("--finalize", action="store_true",
+                    help="门禁通过时把 execution 置为 COMPLETED")
+    sg.set_defaults(func=cmd_gate)
+
+    sf = sub.add_parser("flush-writes", help="重试 pending_writes（禅道回写队列）")
+    sf.set_defaults(func=cmd_flush_writes)
     return p
 
 

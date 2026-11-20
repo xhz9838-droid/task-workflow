@@ -51,7 +51,7 @@ python -I "{WF}/scripts/project_register.py" plan \
   --project-key <key> --name "<项目名>" \
   --zentao-project-id <禅道项目ID> [--product-ids 7,8] \
   --repo <repo_key>=<本地路径>:<role>[:<remote_url>] ... \
-  --user <当前用户ID> --out "{WF}/execution/_registry/plan-<key>.json"
+  --user <当前用户ID> --out "{WF}/execution/_register/plan-<key>.json"
 ```
 
 脚本自动完成：project_key 查重、禅道项目查重、**技术栈识别**（pom.xml→java-maven、
@@ -72,7 +72,7 @@ Git 8 项校验（路径/目录/Git 特征/根一致/remote 一致/工作区可�
 
 ```bash
 python -I "{WF}/scripts/project_register.py" apply \
-  --plan "{WF}/execution/_registry/plan-<key>.json" --confirm <fingerprint>
+  --plan "{WF}/execution/_register/plan-<key>.json" --confirm <fingerprint>
 ```
 
 - 指纹不一致 → 拒绝执行（计划已变更须重新确认）

@@ -22,28 +22,31 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
   （`python -I "{WF}/scripts/zt.py" project --task <id>` 只读提取归属 →
   `python -I "{WF}/scripts/project_resolver.py" match --task-json -`）：
   project_id 精确 > product_id 辅助 > 显式映射 > 名称仅辅助（名称命中**须用户确认**）；
-  唯一可靠命中才使用；多候选→询问用户；无命中→提示 `/workflow-register-project`，**不创建 execution**
+  唯一可靠命中才使用；多候选→询问用户；无命中→**不创建 execution**
+
+### 未注册项目（不要求用户重启命令）
+
+显式 `project_key` 配置不存在，或 `match` 无命中时：
+
+1. **不创建**正式 execution、**不派发** Agent；
+2. 就地提示并执行 `/workflow-register-project`（或等价 CLI：
+   `project_register.py plan ... --out ...` → 展示指纹 → `apply --plan ... --confirm <指纹>`）；
+3. 注册完成后继续原任务。
 
 ## 第 0 步：定位工作流根（每次启动必做）
 
-Skill 安装目录（本 SKILL.md 所在目录）**只有 Skill 文件**，不含 `config/`、`execution/`，
-**不得**当作工作流仓库；当前业务项目目录同样**不得**当作工作流根。
+**Skill 安装目录只有 Skill 文件，不含 `scripts/`**。禁止尝试
+`~/.claude/skills/zentao-dev-workflow/scripts/*.py`（必然不存在）。
 
-统一解析机制（`scripts/_home.py`，优先级命中即止）：
+按以下顺序取得 `{WF}`，不要猜：
 
-1. 环境变量 `WORKFLOW_HOME`
-2. 用户级配置 `~/.claude/zentao-dev-workflow.json` → `workflow_home`
-3. 安装记录 `~/.claude/zentao-dev-workflow.home`（`scripts/install.sh` 写入）
-4. Skill 开发源（脚本所在仓库，须通过校验）
-5. 从当前目录向上探测（须同时含 `config/workflow.yaml` + `scripts/_config.py`）
+1. 读取安装记录：`cat ~/.claude/zentao-dev-workflow.home`
+2. `WORKFLOW_HOME` 环境变量
+3. `~/.claude/zentao-dev-workflow.json` 的 `workflow_home`
+4. 以上都无 → 进入工作流仓库目录运行 `python -I scripts/_home.py` 生成/确认
 
-按上述顺序取得候选目录 `{WF}` 后复核：
-
-```bash
-python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根绝对路径
-```
-
-全部落空 → **明确报错**并列出已尝试来源，询问用户设置 `WORKFLOW_HOME`；**不猜测**。
+拿到候选后再复核：`python -I "{WF}/scripts/_home.py"`（输出校验通过的绝对路径）。
+全部落空 → **明确报错**，提示设置 `WORKFLOW_HOME` 或重跑 `scripts/install.sh`；**不猜测**。
 
 ## 路径锚定
 
@@ -78,15 +81,15 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 2. 获取任务（task_source 适配器；无适配器则从 task-context.md / 人工输入）
 3. 需求分析（architect，读任务描述 + 项目代码 + 项目 CLAUDE.md）
 4. 技术设计（architect / database，产出 design/）
-5. 人工设计确认（L3 决策强制路由：必须通过 `mcp__human-decision__request_human_decision` MCP 工具发起；禁止在对话中直接询问用户代替 L3 决策流程。调用后 `wait_for_decision` 有界等待 300s，超时 → outcome=suspended → 挂起当前节点，继续独立节点。权限拦截 → 记录待授权事件到 decisions.md，不阻塞主流程。）
+5. 设计确认（L2 自主 / L3 人工）：L2 在授权内自决并写入 decisions.md，**不调用 HITL**；仅 L3 必须通过 `mcp__human-decision__request_human_decision` 发起（禁止对话直接询问）。有界等待 300s，超时 → suspended → 挂起依赖节点，独立节点继续。权限拦截 → 记录待授权事件到 decisions.md，不阻塞主流程。
 6. 生成任务 DAG（tasks.yaml）+ migrate_runstate.py（历史 run-state 迁入 SQLite）
 7. Agent 调度（dispatch.py plan/register-dispatch/confirm-running；按 agents{} 过滤启用项）
 8. 开发 + 测试（各 Agent 在 worktree 内，遵守文件所有权）
 9. CI 构建（jenkins 适配器，仅白名单 Job）
 10. 失败修复（L1/L2 自动，L3 人工）；dispatch.py reconcile 对账僵尸/超时
 11. QA + 集成审查（dispatch.py record-result 写执行层结果，主控验收层核验）
-12. 进度回写（task_source 适配器，追加不覆盖）
-13. 最终报告 → Verifier 门禁通过 → 自动 task_finish（读回确认）→ **不自动 task_close**
+12. 进度回写（task_source 适配器，追加不覆盖；`pending_writes` 非空时先 flush）
+13. 最终报告 → Verifier 门禁通过 → **`dispatch.py gate --finalize` 返回 ok** → 自动 task_finish（读回确认）→ 关闭条件满足则自动 task_close（读回确认）
 ```
 
 > **状态源**：DAG 节点执行状态唯一真相源是 agent-manager SQLite（`node_dispatches`）。`run-state.json` 是 `dispatch.py export-state` 的只读快照。主控/Skill/Subagent 禁止直接改 JSON。
@@ -107,7 +110,7 @@ python -I "{WF}/scripts/_home.py"          # 输出校验通过的工作流根�
 - **规则 1/2/3**：子 Agent 完成后必须继续推进 DAG，不得提前结束
 - **规则 4**：完成状态须证据核验，不采信 Agent 自述
 - **规则 6**：中断恢复从最近可信检查点继续，不重复已完成节点
-- **规则 8**：工作流 COMPLETED 前需全部节点完成 + QA + 集成审查 + 真实构建结果 + 最终报告；`task_finish` 经 Verifier 门禁后可自动执行（须读回确认）；**`task_close` 始终禁止自动**
+- **规则 8**：结束前必须运行 `python -I "{WF}/scripts/dispatch.py" --project <k> --task-id <id> gate --finalize`，返回 ok 才允许 COMPLETED；`task_finish` 经 Verifier 门禁后自动执行（须读回确认）；`task_close` 在关闭条件满足后自动执行（须读回确认），条件不满足则暂缓并记录原因。
 
 ## 何时查阅 references
 

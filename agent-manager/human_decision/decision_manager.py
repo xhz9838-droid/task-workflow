@@ -89,7 +89,17 @@ class DecisionManager:
         session_id: str = "",
         wait_seconds: int | None = None,
     ) -> DecisionRecord:
-        """创建决策并发送钉钉通知。返回 DecisionRecord。"""
+        """创建决策并发送钉钉通知。返回 DecisionRecord。
+
+        显式传 L1/L2/P2 属于"应自主处理"的等级 → 拒绝，避免把普通问题丢给用户。
+        """
+        if level is not None:
+            from human_decision.routing import route_decision
+            r = route_decision(level)
+            if r["route"] == "auto":
+                raise ValueError(
+                    "决策等级 %s 应自主处理（%s），不得创建人工决策。"
+                    "请写入 decisions.md 后继续。" % (level, r["reason"]))
         det = detect(question=question, background=background, risk=risk, explicit_level=level)
         if det.level == DecisionLevel.P2 and not level:
             # P2 不应进入人工流程 —— 防止滥用：仍允许创建，但标记理由
@@ -242,7 +252,8 @@ class DecisionManager:
 
     # ------------------------------------------------------- 运维
     def recover(self) -> dict:
-        return recovery_handler.recover(self.store, self.cfg, self.notifier, logger=self._log)
+        return recovery_handler.recover(self.store, self.cfg, self.notifier,
+                                        resumer=self.resumer, logger=self._log)
 
     def check_timeouts(self) -> dict:
         return timeout_handler.check_timeouts(self.store, self.cfg, self.notifier, logger=self._log)
