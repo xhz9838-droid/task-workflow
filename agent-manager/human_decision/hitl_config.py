@@ -31,6 +31,8 @@ DEFAULTS = {
     "timeout_after_seconds": 86400,
     "notify_retries": 3,
     "notify_retry_interval_seconds": 5,
+    "notify_transport": ["dingtalk_direct", "cc_connect"],
+    "dingtalk_user_id": "",
     "cc_connect_bin": "cc-connect",
     "cc_data_dir": "",                  # 空 = ~/.cc-connect
     "management_api": "http://127.0.0.1:9820",
