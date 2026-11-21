@@ -8,21 +8,27 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 ## 调用方式
 
 ```text
-/zentao-dev-workflow {project_key} {task_id}
-/zentao-dev-workflow {task_id}            # 仅任务号（如 #3415）：project_key 缺失，须归属验证
+/zentao-dev-workflow {project_key} {task_id}                  # 单任务（历史方式，保持兼容）
+/zentao-dev-workflow {project_key} {task_id} {task_id} ...    # 多任务
+/zentao-dev-workflow {project_key} --tasks 3442,3443,3444     # 显式列表
+/zentao-dev-workflow {task_id}                                # 仅任务号（如 #3415）：project_key 缺失，须归属验证
 ```
 
 也支持自然语言（"用 jeebootx 项目跑任务 3413"、"继续上次的工作流"）。
 
-参数**独立解析**（`scripts/_args.py parse`）：
+参数**独立解析**（`scripts/_args.py parse`，Skill 与预检共用同一解析器）：
 
-- `{task_id}`：纯数字，允许 `#` 前缀；`#3415` 只是任务号，**不是完整参数**
+- `{task_id}`：纯数字，允许 `#` 前缀；多任务号自动去重，保持输入顺序
 - `{project_key}`：非数字标识，对应 `config/projects/{project_key}.yaml`
 - `project_key` 缺失时**不推断**：经统一项目解析链确定
   （`python -I "{WF}/scripts/zt.py" project --task <id>` 只读提取归属 →
   `python -I "{WF}/scripts/project_resolver.py" match --task-json -`）：
   project_id 精确 > product_id 辅助 > 显式映射 > 名称仅辅助（名称命中**须用户确认**）；
   唯一可靠命中才使用；多候选→询问用户；无命中→**不创建 execution**
+
+`user_id` 是**可选**参数：普通任务启动、任务查询、Agent 调度不依赖它；
+只有用户级仓库路径映射（`config/users/{id}.yaml → project_paths`）与
+Human Decision 决策人校验在各自功能执行时才需要。
 
 ### 未注册项目（不要求用户重启命令）
 
@@ -57,26 +63,52 @@ description: 通用多 Agent 研发工作流总控。按项目配置加载仓库
 - 配置、执行状态、审计日志统一写 `{WF}/...`，按 `project_key/task_id` 隔离，
   不因启动目录不同产生重复或错位的状态目录
 
-## 启动前必检（缺任一项**明确报错**，不猜测）
+## 启动预检（统一入口，一次收集）
 
-1. **项目解析**：`python -I "{WF}/scripts/project_resolver.py" context --project <key> [--user <id>]`
-   （`--user` 省略时自动经 WORKFLOW_USER_ID / ~/.claude/zentao-dev-workflow.json 解析；
-   显式指定优先；**禁止**用 `$(whoami)` 等 OS 用户名代替工作流用户 ID；
-   未注册/禁用 → 提示 `/workflow-register-project`，不创建 execution）
-2. **项目路径**：`config/users/{id}.yaml → project_paths` 优先于 `repositories[].path`（`${ENV}` 展开）；
-   仓库校验经 `scripts/repo_check.py`（`blocked`/`mismatch` → 列出问题交用户处理，不自动修复）
-3. **人员配置**：`config/users/{user_id}.yaml` 存在（或 `--user` 显式指定）
-4. **工具适配器**：按项目 `integrations.*` 判断需要哪些适配器，检查 `config/adapters/*.yaml`
-5. **任务来源**：`integrations.task_source` 明确（zentao / none）
-6. **当前身份与权限**：适配器能确认当前用户身份
+```bash
+python -I "{WF}/scripts/preflight.py" {project_key} {task_id} [task_id ...] \
+    [--tasks 3442,3443] [--user <id>] [--fetch-tasks] [--json] [--out <file>]
+```
 
-**禁止**自行猜测：仓库路径、账号、Jenkins Job、任务字段。
+一次覆盖：工作流根、项目配置、项目上下文、仓库只读校验、任务参数、任务执行目录、
+可选禅道任务详情、状态库/禅道 Skill/HITL MCP 运行环境。输出统一为
+`PASS / WARN / BLOCKED + 原因 + 是否阻塞 + 已采取动作`：
+
+- **WARN**（缺 user_id、工作区有未提交改动、首次执行无 tasks.yaml、任务详情获取失败等）
+  → 记录后继续，不终止 Workflow；
+- **BLOCKED**（工作流根无效、项目配置缺失、显式 user 下仓库路径不可用/Git 不一致、
+  参数错误、`--require-tasks` 下任务详情失败）→ 必须先处理；
+- 预检结果可 `--out` 落盘供后续阶段复用，避免重复检查。
+
+不要将 Jenkins 构建/部署等非启动必要操作放进预检。**禁止**自行猜测：仓库路径、账号、Jenkins Job、任务字段。
+
+## 多任务执行
+
+预检通过后，用**既有** DAG/派发能力编排，不另建调度系统：
+
+```bash
+python -I "{WF}/scripts/dispatch.py" --project {project_key} \
+    --task-ids {id1},{id2},{id3} batch-plan [--depends 3443:3442] [--parallel]
+```
+
+- `batch-plan` **只读**：不创建 execution、不派发、不改 run-state；输出每个任务
+  的 DAG/状态/依赖与波次 `waves`。
+- 依赖来源：任务 `tasks.yaml` 顶层 `depends_on_tasks` 或 `--depends A:B`；
+  未声明依赖时**保持串行默认**，不擅自假定可并行；`--parallel` 仅表示同波次允许并行。
+- 循环依赖、批次外未知依赖 → 报错，不进调度。
+- 执行：按 `waves` 顺序推进；同一波次在 `--parallel` 下可并行，
+  各任务仍走自己的 `execution/{project_key}/{task_id}/` 与 SQLite execution。
+- 一个任务失败/`WAITING_HUMAN` **不得**阻塞其他独立任务；整体结束仍需逐任务
+  `dispatch.py gate` 通过。每个任务独立回写进度、测试与验收结果。
 
 ## 执行流程
 
 ```text
-0. 定位工作流根（第 0 步）→ 解析项目（显式 project_key 或任务自动发现：
+0. 定位工作流根（第 0 步）→ 统一预检 preflight（项目/仓库/任务参数/执行目录；
+   user_id 可选，缺省仅 WARN）→ 解析项目（显式 project_key 或任务自动发现：
    zt.py project → project_resolver match → context；未识别不创建 execution）
+0.5 多任务：dispatch.py batch-plan（只读）→ 校验任务、识别依赖、输出 waves；
+   单任务跳过。依赖未声明时串行默认，不擅自并行。
 1. 加载配置（workflow → adapters → project → user → .env；仓库路径经 project_resolver）
 2. 获取任务（task_source 适配器；无适配器则从 task-context.md / 人工输入）
 3. 需求分析（architect，读任务描述 + 项目代码 + 项目 CLAUDE.md）
@@ -162,5 +194,8 @@ Skill 按 `project_key` 加载项目配置，按 `task_id` 加载任务状态，
 - 不假设每个项目都需要全部 7 个 Agent
 - 不自动执行部署、服务重启、任务关闭
 - 缺配置时**报缺失项**，不猜测、不编造默认值
+- `user_id` 不是普通启动的必要条件：缺省时 WARN 继续；不得因此阻止项目解析、
+  任务查询、Agent 调度与普通研发执行。身份相关的校验（决策人白名单）只在其功能执行时检查
+- 多任务不得合并成单任务；参数错误必须给出明确原因与正确用法
 - 无 ZenTao / Jenkins 配置时，仍可执行需求分析、开发、测试、代码审查、状态管理
 - **禁止无条件自行结束工作流**。结束前必须检查：(1) 所有 DAG 节点处于终态（DONE/FAILED/CANCELLED）；(2) 无待处理 Human Decision（WAITING_HUMAN 节点）；(3) 无 pending_writes 未刷写。任一不满足 → 继续推进。

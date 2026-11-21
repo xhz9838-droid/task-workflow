@@ -3,13 +3,16 @@
 
 规则（与 SKILL.md 一致）：
   - task_id：纯数字，允许 # 前缀；`#3415` 只表示任务号，不是完整参数
+  - 支持一次传多个任务号：`jeebootx 3442 3443 3444` 或 `jeebootx --tasks 3442,3443`
   - project_key：非数字标识（对应 config/projects/{project_key}.yaml）
   - 两者独立解析；project_key 缺失时不推断：先经禅道任务查询验证归属
     （match_project），能唯一确定才使用；否则询问用户
 
 用法（模块）：
     from _args import parse_invocation, match_project
-    parse_invocation(["#3415"])   # {"project_key": None, "task_id": "3415", "missing": ["project_key"]}
+    parse_invocation(["#3415"])   # {"project_key": None, "task_ids": ["3415"], "task_id": "3415", ...}
+    parse_invocation(["jeebootx", "3442", "3443"])
+                                  # {"project_key": "jeebootx", "task_ids": ["3442","3443"], "task_id": None, ...}
 
 CLI：
     python -I scripts/_args.py parse <tokens...>
@@ -32,37 +35,81 @@ except Exception:
 
 _TASK_RE = re.compile(r"^\d+$")
 _KEY_BAD_CHARS = " \t/\\:"
+_TASKS_OPT = "--tasks"
+USAGE = ("用法：/zentao-dev-workflow {project_key} {task_id} [task_id ...]\n"
+         "   或：/zentao-dev-workflow {project_key} --tasks 3442,3443,3444")
 
 
 class ArgsError(Exception):
     """调用参数无法解析——必须人工澄清，不猜测。"""
 
 
-def parse_invocation(tokens) -> dict:
-    """解析调用参数 → {"project_key", "task_id", "missing"}。
+def _add_task(tok: str, task_ids: list, seen: set, duplicates: list) -> None:
+    if tok in seen:
+        if tok not in duplicates:
+            duplicates.append(tok)
+        return
+    seen.add(tok)
+    task_ids.append(tok)
 
-    - `#3415` / `3415` → task_id="3415"，project_key 缺失（不推断）
+
+def _split_task_value(value: str) -> list:
+    """--tasks 的值：逗号/空白分隔，允许 # 前缀。"""
+    parts = []
+    for chunk in re.split(r"[,\s]+", (value or "").strip()):
+        if not chunk:
+            continue
+        if chunk.startswith("#"):
+            chunk = chunk[1:]
+        if not _TASK_RE.match(chunk):
+            raise ArgsError("--tasks 含非法任务号：%r（只接受数字，如 3442,3443）" % chunk)
+        parts.append(chunk)
+    if not parts:
+        raise ArgsError("--tasks 未提供任务号（示例：--tasks 3442,3443）")
+    return parts
+
+
+def parse_invocation(tokens) -> dict:
+    """解析调用参数 → {"project_key", "task_ids", "task_id", "missing", "duplicate_task_ids"}。
+
+    - `#3415` / `3415` → task_ids=["3415"]，project_key 缺失（不推断）
     - `jeebootx 3415` / `jeebootx #3415` / `3415 jeebootx` → 两者齐备
-    - 同类参数给两个、或出现 - 开头的选项 → ArgsError
+    - `jeebootx 3442 3443` / `jeebootx --tasks 3442,3443` → 多任务
+    - 两个不同 project_key、非法任务号、未知选项 → ArgsError
+    - `task_id` 仅为单任务兼容字段（多任务时为 None，调用方用 task_ids）
     """
+    toks = list(tokens or [])
     project_key = None
-    task_id = None
-    for tok in tokens or []:
-        tok = (tok or "").strip()
+    task_ids: list = []
+    seen: set = set()
+    duplicates: list = []
+    i = 0
+    while i < len(toks):
+        tok = (toks[i] or "").strip()
+        i += 1
         if not tok:
             continue
+        if tok == _TASKS_OPT:
+            if i >= len(toks):
+                raise ArgsError("--tasks 后缺少任务号。\n%s" % USAGE)
+            for t in _split_task_value(toks[i]):
+                _add_task(t, task_ids, seen, duplicates)
+            i += 1
+            continue
+        if tok.startswith(_TASKS_OPT + "="):
+            for t in _split_task_value(tok.split("=", 1)[1]):
+                _add_task(t, task_ids, seen, duplicates)
+            continue
         if tok.startswith("-"):
-            raise ArgsError("不支持的选项 %r：参数只接受 {project_key} {task_id}" % tok)
+            raise ArgsError("不支持的选项 %r。\n%s" % (tok, USAGE))
         if tok.startswith("#"):
             tok = tok[1:]
         if not tok:
             continue
         if _TASK_RE.match(tok):
-            if task_id is not None:
-                raise ArgsError("给定了多个任务号：%s 与 %s" % (task_id, tok))
-            task_id = tok
+            _add_task(tok, task_ids, seen, duplicates)
         else:
-            if project_key is not None:
+            if project_key is not None and project_key != tok:
                 raise ArgsError("给定了多个 project_key：%s 与 %s" % (project_key, tok))
             if any(c in tok for c in _KEY_BAD_CHARS):
                 raise ArgsError("非法 project_key：%r" % tok)
@@ -70,9 +117,15 @@ def parse_invocation(tokens) -> dict:
     missing = []
     if project_key is None:
         missing.append("project_key")
-    if task_id is None:
+    if not task_ids:
         missing.append("task_id")
-    return {"project_key": project_key, "task_id": task_id, "missing": missing}
+    return {
+        "project_key": project_key,
+        "task_ids": task_ids,
+        "task_id": task_ids[0] if len(task_ids) == 1 else None,
+        "missing": missing,
+        "duplicate_task_ids": duplicates,
+    }
 
 
 def match_project(task_detail: dict, projects: list):

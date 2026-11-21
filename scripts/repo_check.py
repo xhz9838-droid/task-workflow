@@ -203,3 +203,49 @@ def check_project_repos(project_cfg: dict, repo_paths: dict, *, require_git: boo
             require_git=require_git and bool(r.get("require_git", True)),
         ))
     return out
+
+
+# --------------------------------------------------------------- CLI（独立可诊断）
+def main(argv=None) -> int:
+    """只读仓库校验 CLI：输出明确结果与退出码（0=全部 ok，1=有问题，2=用法错误）。"""
+    import argparse
+    import json
+    import sys
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+
+    ap = argparse.ArgumentParser(prog="repo_check.py", description="项目仓库只读校验")
+    ap.add_argument("--project", required=True)
+    ap.add_argument("--user", default="", help="工作流 user_id（可选）")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv)
+
+    try:
+        from _config import load_config
+        from project_resolver import build_context
+        ctx = build_context(args.project, user_id=args.user or None)
+        cfg = load_config(args.project, args.user or None, strict=True)
+        results = check_project_repos(cfg.get("project") or {}, ctx.get("repo_paths") or {})
+    except Exception as e:  # noqa: BLE001 —— CLI 必须给出退出码，不静默
+        print("❌ %s: %s" % (type(e).__name__, e), file=sys.stderr)
+        return 2
+
+    payload = [{
+        "repo": r.repo_key, "path": r.path, "role": r.role,
+        "technology": r.technology, "status": r.status,
+        "problems": r.problems, "details": r.details,
+    } for r in results]
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+    else:
+        for r in results:
+            print("[%s] %s: %s %s" % (r.status.upper(), r.repo_key, r.path,
+                                      ("；".join(r.problems) if r.problems else "")))
+    return 0 if all(r.status == "ok" for r in results) else 1
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    raise SystemExit(main(_sys.argv[1:]))

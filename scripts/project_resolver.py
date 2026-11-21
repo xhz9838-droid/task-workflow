@@ -167,6 +167,17 @@ def current_user_id(explicit: str | None = None) -> str:
     return _resolve_user_id(explicit)[0]
 
 
+def resolve_user_id_optional(explicit: str | None = None) -> tuple[str, str]:
+    """当前用户解析（可选）：解析不到返回 ("", "unresolved: …")，不抛错。
+
+    普通启动/项目上下文不需要 user_id；只有依赖用户路径映射或决策人身份的功能才需要。
+    """
+    try:
+        return _resolve_user_id(explicit)
+    except ResolveError as e:
+        return "", "unresolved: %s" % e
+
+
 def _resolve_user_id(explicit: str | None = None) -> tuple[str, str]:
     """当前用户解析，返回 (user_id, source)。
 
@@ -232,16 +243,24 @@ def repo_paths_for(project_cfg: dict, user_id: str | None, *, home: str | None =
     return paths
 
 
-def build_context(project_key: str, *, user_id: str | None = None, home: str | None = None) -> dict:
-    """统一项目上下文（所有 Agent 共用）。"""
-    uid = current_user_id(user_id)
-    cfg = load_config(project_key=project_key, user_id=uid, strict=True)
+def build_context(project_key: str, *, user_id: str | None = None, home: str | None = None,
+                  resolve_user: bool = True) -> dict:
+    """统一项目上下文（所有 Agent 共用）。
+
+    user_id 可选：解析不到时 context 仍可构建（user_id=""），
+    用户级 project_paths 映射降级为项目配置 path；依赖用户身份的功能自行在调用点检查。
+    resolve_user=False 表示不解析用户（降级重建上下文时用）。
+    """
+    uid, user_source = (resolve_user_id_optional(user_id) if resolve_user
+                        else ("", "unresolved"))
+    cfg = load_config(project_key=project_key, user_id=uid or None, strict=True)
     proj = get(cfg, "project") or {}
     repos = get(cfg, "project.repositories") or []
     return {
         "project_key": str(proj.get("key") or project_key),
         "project_name": str(proj.get("name") or ""),
         "user_id": uid,
+        "user_source": user_source,
         "baseline_branch": str(proj.get("baseline_branch") or ""),
         "agents": [k for k, v in (proj.get("agents") or {}).items() if v is True],
         "integrations": proj.get("integrations") or {},
@@ -251,7 +270,7 @@ def build_context(project_key: str, *, user_id: str | None = None, home: str | N
              "enabled": r.get("enabled", True)}
             for r in repos if r.get("key")
         ],
-        "repo_paths": repo_paths_for(cfg, uid, home=home),
+        "repo_paths": repo_paths_for(cfg, uid or None, home=home),
         "execution_root": os.path.join(
             get(cfg, "execution_root") or os.path.join(resolve_workflow_home()[0], "execution"),
             str(project_key),

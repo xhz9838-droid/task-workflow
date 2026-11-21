@@ -9,6 +9,7 @@
     - reconcile        : 对账 DISPATCHING 超时 / 僵尸 RUNNING / 迟到通知
     - export-state     : 从 SQLite 生成 run-state.json（只读快照）
     - status           : 查节点/Agent 执行状态
+    - batch-plan       : 多任务入口计划（跨任务依赖 → 波次；只读，不建/不改状态）
 
 设计约束（硬性）：
     - SQLite（state_manager）是 DAG 节点状态唯一真相源。
@@ -30,6 +31,7 @@
     python -I scripts/dispatch.py reconcile --project jeebootx --task-id 3415
     python -I scripts/dispatch.py export-state --project jeebootx --task-id 3415
     python -I scripts/dispatch.py status --project jeebootx --task-id 3415 [--node C1]
+    python -I scripts/dispatch.py --project jeebootx --task-ids 3442,3443,3444 batch-plan [--depends 3443:3442]
 """
 from __future__ import annotations
 
@@ -590,13 +592,139 @@ def cmd_status(args) -> int:
         state.close()
 
 
+def _batch_task_ids(args) -> list:
+    ids = []
+    for raw in (getattr(args, "task_ids", "") or "").split(","):
+        raw = raw.strip().lstrip("#")
+        if raw:
+            ids.append(raw)
+    if getattr(args, "task_id", ""):
+        ids.append(str(args.task_id).strip().lstrip("#"))
+    out = []
+    for x in ids:
+        if x and x not in out:
+            out.append(x)
+    return out
+
+
+def _batch_task_state(state, project: str, task_id: str, nodes: list) -> dict:
+    """只读查询任务执行状态（不建空壳 execution）。"""
+    rec = state.get_execution(project, task_id)
+    if not rec:
+        return {"status": "not_started", "execution_id": None, "nodes": {}}
+    eid = int(rec["id"])
+    node_states = {}
+    for n in nodes:
+        node_states[n["id"]] = _node_status_from_dispatch(
+            state.latest_node_dispatch(eid, n["id"]))
+    vals = list(node_states.values())
+    if vals and all(v == "done" for v in vals):
+        status = "done"
+    elif any(v == "waiting_human" for v in vals):
+        status = "waiting_human"
+    elif any(v in ("failed", "unverified", "blocked") for v in vals):
+        status = "attention"
+    else:
+        status = "in_progress"
+    return {"status": status, "execution_id": eid, "nodes": node_states}
+
+
+def _batch_external_done(state, project: str, task_id: str) -> bool:
+    """批次外依赖是否已完成（全部 DAG 节点 DONE）。无法确认 → False。"""
+    exec_dir = exec_root(load_config(project, strict=False), project, task_id)
+    nodes = (_load_tasks_yaml(exec_dir) or {}).get("nodes") or []
+    if not nodes:
+        return False
+    return _batch_task_state(state, project, task_id, nodes)["status"] == "done"
+
+
+def cmd_batch_plan(args) -> int:
+    """多任务入口计划：校验任务、读取已有 DAG、计算跨任务依赖波次。
+
+    只读：不创建 execution、不登记派发、不改 run-state。
+    依赖来源：各任务 tasks.yaml 顶层 depends_on_tasks + CLI --depends "A:B,B:C"。
+    未声明依赖的任务保持串行默认（不擅自假定可并行）。
+    """
+    ids = _batch_task_ids(args)
+    if not ids:
+        sys.stderr.write("[ERROR] batch-plan 需要 --task-ids a,b,c 或 --task-id\n")
+        return 2
+    cfg = load_config(args.project, strict=False)
+    state = StateManager(args.db)
+    try:
+        defs = {}
+        errors = []
+        for tid in ids:
+            exec_dir = exec_root(cfg, args.project, tid)
+            dag = _load_tasks_yaml(exec_dir) or {}
+            nodes = dag.get("nodes") or []
+            deps = [str(x).strip().lstrip("#") for x in (dag.get("depends_on_tasks") or [])]
+            defs[tid] = {
+                "has_dag": bool(nodes),
+                "node_count": len(nodes),
+                "deps": [d for d in deps if d],
+                **_batch_task_state(state, args.project, tid, nodes),
+            }
+
+        for pair in [p.strip() for p in (getattr(args, "depends", "") or "").split(",") if p.strip()]:
+            if ":" not in pair:
+                errors.append({"code": "BAD_DEPENDS", "detail": pair,
+                               "hint": "格式 task:depends_on，如 3443:3442"})
+                continue
+            task, dep = [x.strip().lstrip("#") for x in pair.split(":", 1)]
+            if task not in defs:
+                errors.append({"code": "DEP_TASK_OUT_OF_SCOPE", "detail": pair})
+                continue
+            if dep not in defs[task]["deps"]:
+                defs[task]["deps"].append(dep)
+
+        for tid, d in defs.items():
+            for dep in d["deps"]:
+                if dep in defs:
+                    continue
+                if _batch_external_done(state, args.project, dep):
+                    continue
+                errors.append({
+                    "code": "DEP_UNKNOWN", "task": tid, "detail": dep,
+                    "hint": "依赖任务不在本次范围且未完成：加入批次或先完成该任务",
+                })
+
+        waves = []
+        pending = [t for t in ids]
+        while pending:
+            ready = [t for t in pending
+                     if not any(dep in pending for dep in defs[t]["deps"])]
+            if not ready:
+                errors.append({"code": "DEP_CYCLE", "detail": pending})
+                break
+            waves.append(ready)
+            pending = [t for t in pending if t not in ready]
+
+        out = {
+            "project_key": args.project,
+            "task_ids": ids,
+            "tasks": defs,
+            "waves": waves,
+            "execution_order": ([t for w in waves for t in w]
+                                if not getattr(args, "parallel", False) else []),
+            "parallel_within_wave": bool(getattr(args, "parallel", False)),
+            "state_source": "sqlite",
+            "errors": errors,
+        }
+        print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
+        return 0 if not errors else 1
+    finally:
+        state.close()
+
+
 # --------------------------------------------------------------- CLI
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dispatch.py",
                                 description="DAG 派发统一入口（SQLite 唯一真相源）")
     p.add_argument("--db", default=DEFAULT_DB)
     p.add_argument("--project", required=True)
-    p.add_argument("--task-id", required=True)
+    p.add_argument("--task-id", default="", help="单任务 ID（batch-plan 可用 --task-ids）")
+    p.add_argument("--task-ids", default="", help="多任务 ID，逗号分隔（batch-plan 用）")
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("plan", help="计算 DAG 可执行节点")
@@ -642,6 +770,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="门禁通过时把 execution 置为 COMPLETED")
     sg.set_defaults(func=cmd_gate)
 
+    sb = sub.add_parser("batch-plan", help="多任务入口计划（跨任务依赖 → 波次；只读）")
+    sb.add_argument("--depends", default="",
+                    help="显式依赖，逗号分隔 task:dep，如 3443:3442,3444:3442")
+    sb.add_argument("--parallel", action="store_true",
+                    help="同波次无依赖任务允许并行（默认串行，不擅自假定并行）")
+    sb.set_defaults(func=cmd_batch_plan)
+
     sf = sub.add_parser("flush-writes", help="重试 pending_writes（禅道回写队列）")
     sf.set_defaults(func=cmd_flush_writes)
     return p
@@ -649,6 +784,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command != "batch-plan" and not args.task_id:
+        sys.stderr.write("[ERROR] --task-id 必填（batch-plan 可用 --task-ids 或 --task-id）\n")
+        return 2
     try:
         return args.func(args)
     except KeyError as e:
