@@ -98,10 +98,15 @@ def _acquire_daemon_lock(path: str) -> bool:
 def _release_daemon_lock(path: str) -> None:
     try:
         with open(path, encoding="utf-8") as f:
-            if (f.read() or "").strip() == str(os.getpid()):
-                os.unlink(path)
+            content = f.read()
     except OSError:
-        pass
+        return
+    # Windows 下必须先关闭文件句柄再 unlink，否则删除被拒绝
+    if (content or "").strip() == str(os.getpid()):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def cmd_daemon(mgr: DecisionManager, args) -> int:

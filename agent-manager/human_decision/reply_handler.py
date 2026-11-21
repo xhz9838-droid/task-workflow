@@ -75,12 +75,24 @@ class ReplyHandler:
             return {"outcome": "unmatched", "reason": "空消息"}
 
         parsed = parse_reply(text)
-        decision = self._resolve_decision(parsed.decision_id, chat_session_key)
+        decision = self._resolve_decision(parsed.decision_id, chat_session_key, msg_ts)
         if decision is None:
+            waiting = self.store.list_waiting()
             if parsed.decision_id:
-                return {"outcome": "unmatched", "decision_id": parsed.decision_id,
-                        "reason": f"未找到决策 {parsed.decision_id}"}
-            return {"outcome": "unmatched", "reason": "当前没有匹配的待决决策"}
+                reason = f"未找到决策 {parsed.decision_id}"
+            elif len(waiting) > 1:
+                reason = "存在多个待决决策，请回复 <决策编号> <选项>"
+            else:
+                reason = "当前没有匹配的待决决策"
+            # 未匹配的回复也留痕（空决策号 = 未绑定任何决策），便于事后诊断
+            self.store.log_event("", "reply_unmatched", {
+                "source": source, "user_id": user_id, "msg_id": msg_id,
+                "chat_session_key": chat_session_key, "text": text[:200],
+                "explicit_decision_id": parsed.decision_id or "",
+                "waiting": [d.decision_id for d in waiting[:5]],
+            })
+            return {"outcome": "unmatched", "decision_id": parsed.decision_id,
+                    "reason": reason}
 
         # 防旧消息误伤：watch 来源只接受决策创建之后的消息（时间容差 60s）
         if source == "watch" and msg_ts and decision.created_at:
@@ -183,7 +195,61 @@ class ReplyHandler:
                 "choice": parsed.choice, "comment": parsed.comment}
 
     # ------------------------------------------------------- 决策绑定
-    def _resolve_decision(self, dec_id: Optional[str], chat_session_key: str) -> Optional[DecisionRecord]:
+    _AUTO_BIND_MIN_GAP_SECONDS = 3600
+    _AUTO_BIND_MAX_AGE_SECONDS = 12 * 3600   # 超龄未绑定决策不自动认领，要求显式 DEC-ID
+
+    @staticmethod
+    def _time_anchor(d: DecisionRecord) -> str:
+        # 提醒（reminded_at）不改变匹配优先级：旧决策的提醒不能抢新决策的回复
+        return d.notified_at or d.created_at or ""
+
+    def _pick_unbound(self, unbound: list, msg_ts: str = "") -> Optional[DecisionRecord]:
+        """从未绑定会话的待决决策中选一个：最近通知且与次新间隔足够大才自动绑定。
+
+        - 多个决策并行且通知时间接近时返回 None，要求显式 DEC-ID，避免回复串到别的决策。
+        - 超龄（>12h）的未绑定决策不自动认领，避免过期决策吞掉新回复；仍可用 DEC-ID 回复。
+        """
+        import time as _time
+        reply_epoch = _epoch(msg_ts) or _time.time()
+        eligible = []
+        for d in unbound:
+            anchor = _epoch(self._time_anchor(d))
+            if anchor is not None and anchor > reply_epoch:
+                continue  # 决策晚于该消息，不可能是它的回复
+            if anchor is not None and (reply_epoch - anchor) > self._AUTO_BIND_MAX_AGE_SECONDS:
+                continue  # 过期决策不自动认领
+            eligible.append(d)
+        if not eligible:
+            return None
+        if len(eligible) == 1:
+            return eligible[0]
+
+        eligible.sort(key=lambda d: _epoch(self._time_anchor(d)) or 0.0, reverse=True)
+        left = _epoch(self._time_anchor(eligible[0])) or 0.0
+        right = _epoch(self._time_anchor(eligible[1])) or 0.0
+        return eligible[0] if (left - right) >= self._AUTO_BIND_MIN_GAP_SECONDS else None
+
+    def _bind_chat(self, decision: DecisionRecord, chat_session_key: str) -> None:
+        """把未绑定决策绑定到实际回复的聊天，供后续通知/恢复使用。"""
+        project = ""
+        try:
+            project = self.cfg.project_for_session_key(chat_session_key)
+        except Exception:
+            project = ""
+        self.store.update_fields(
+            decision.decision_id,
+            cc_session_key=chat_session_key,
+            cc_project=project or decision.cc_project,
+        )
+        decision.cc_session_key = chat_session_key
+        if project:
+            decision.cc_project = project
+        self.store.log_event(decision.decision_id, "reply_auto_bind", {
+            "cc_session_key": chat_session_key, "cc_project": decision.cc_project,
+        })
+
+    def _resolve_decision(self, dec_id: Optional[str], chat_session_key: str,
+                          msg_ts: str = "") -> Optional[DecisionRecord]:
         if dec_id:
             return self.store.get(dec_id)
         waiting = self.store.list_waiting()
@@ -192,8 +258,16 @@ class ReplyHandler:
             if len(bound) == 1:
                 return bound[0]
             if len(bound) > 1:
-                return None  # 歧义：要求显式 DEC-ID（由调用方回执提示）
-            # 无待决 → 找该会话最近已决决策，用于「重复回复」提示（不串新任务）
+                return None  # 同会话多个待决：要求显式 DEC-ID
+            # 未绑定会话的待决决策（交互式 Session 创建）：按最近通知自动绑定
+            chosen = self._pick_unbound(
+                [d for d in waiting if not d.cc_session_key], msg_ts)
+            if chosen is not None:
+                self._bind_chat(chosen, chat_session_key)
+                return chosen
+            if waiting:
+                return None  # 有其他待决决策但无法唯一定位
+            # 没有待决决策时，才用已决记录做「重复回复」提示
             decided = [d for d in self.store.list(limit=50)
                        if d.cc_session_key == chat_session_key and not d.is_waiting]
             if decided:
@@ -202,6 +276,8 @@ class ReplyHandler:
         # 无会话键（cli/测试）：全局唯一待决才允许
         if len(waiting) == 1:
             return waiting[0]
+        if waiting:
+            return self._pick_unbound([d for d in waiting if not d.cc_session_key], msg_ts)
         decided = self.store.list(limit=1)
         return decided[0] if decided else None
 
@@ -372,6 +448,18 @@ def _parse_ts(ts: str) -> Optional["datetime.datetime"]:
         return _dt.datetime.fromisoformat(ts)
     except Exception:
         return None
+
+
+def _epoch(ts: str) -> Optional[float]:
+    """ISO 时间 → epoch 秒（统一时区比较）。解析失败返回 None。"""
+    d = _parse_ts(ts)
+    if d is None:
+        return None
+    import datetime as _dt
+
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=_dt.timezone.utc)
+    return d.timestamp()
 
 
 def _shift_ts(ts: str, seconds: int) -> str:

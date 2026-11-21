@@ -111,7 +111,17 @@ class DecisionManager:
         ]
         cc_project = os.environ.get("CC_PROJECT", "")
         cc_session_key = os.environ.get("CC_SESSION_KEY", "")
-        sid = session_id or self.resumer._query_agent_sid(cc_project, cc_session_key)
+        env_binding = bool(cc_session_key)
+        if not cc_session_key:
+            # 交互式 Claude Session 不由 cc-connect 拉起，拿不到 CC_* 环境变量；
+            # 兜底绑定默认私聊会话，保证钉钉回复能关联到本决策。
+            auto_project, auto_key = self.cfg.discover_chat_binding()
+            if auto_key:
+                cc_project, cc_session_key = auto_project, auto_key
+        # 只有 env 绑定才能确认 agent_session_id 属于本会话；自动绑定不猜测 session_id
+        sid = session_id or (
+            self.resumer._query_agent_sid(cc_project, cc_session_key) if env_binding else ""
+        )
 
         wait = wait_seconds if wait_seconds is not None else self.cfg.tool_wait_seconds
         # 超时提醒/超时标记的绝对时间锚点 = 通知时间；deadline 供 UI 展示
@@ -133,6 +143,11 @@ class DecisionManager:
         )
         self.store.create(rec)
         self.store.log_event(rec.decision_id, "detection", det.to_dict())
+        if not env_binding and cc_session_key:
+            self.store.log_event(rec.decision_id, "binding_auto", {
+                "cc_project": cc_project, "cc_session_key": cc_session_key,
+                "reason": "未继承 CC_PROJECT/CC_SESSION_KEY，绑定默认私聊会话",
+            })
         try:
             _audit(rec.task_id, "human_decision.create",
                    {"decision_id": rec.decision_id, "level": rec.level.value,

@@ -76,6 +76,77 @@ class HitlConfig:
         base = env or os.path.join(os.path.expanduser("~"), ".cc-connect")
         return os.path.join(base, "sessions")
 
+    def discover_chat_binding(self) -> tuple[str, str]:
+        """无 CC_PROJECT/CC_SESSION_KEY 时，从 cc-connect 会话文件推断私聊绑定。
+
+        返回 (project, session_key)。只读；优先匹配配置的 dingtalk_user_id，
+        否则取最近更新的单聊会话。无法确定 → ("", "")（不猜测）。
+        """
+        import glob
+        import json
+
+        sdir = self.sessions_dir()
+        if not os.path.isdir(sdir):
+            return "", ""
+        uid = (self.dingtalk_user_id or "").strip()
+        if not uid:
+            ids = sorted(self.decider_ids())
+            if len(ids) == 1:
+                uid = ids[0]
+        if not uid:
+            return "", ""  # 无明确用户 → 不猜测聊天绑定
+        cands = []
+        for path in glob.glob(os.path.join(sdir, "*.json")):
+            try:
+                mtime = os.path.getmtime(path)
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+            project = os.path.basename(path).split("_", 1)[0]
+            keys = []
+            for field in ("active_session", "user_meta"):
+                block = data.get(field) or {}
+                if isinstance(block, dict):
+                    keys.extend(block.keys())
+            for key in keys:
+                key = str(key)
+                if not key.startswith("dingtalk:d:"):
+                    continue
+                if uid and not key.endswith(":" + uid):
+                    continue
+                cands.append((mtime, project, key))
+        if not cands:
+            return "", ""
+        cands.sort(reverse=True)
+        return cands[0][1], cands[0][2]
+
+    def project_for_session_key(self, session_key: str) -> str:
+        """dingtalk 会话键 → cc-connect 项目名（会话文件名前缀）。无法确定 → ""。"""
+        import glob
+        import json
+
+        if not session_key:
+            return ""
+        raw = (session_key or "").strip()
+        if raw.startswith("dingtalk:") and raw.count(":") >= 3:
+            raw = raw[len("dingtalk:"):]
+        sdir = self.sessions_dir()
+        for path in glob.glob(os.path.join(sdir, "*.json")):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+            keys = set()
+            for field in ("active_session", "user_meta"):
+                block = data.get(field) or {}
+                if isinstance(block, dict):
+                    keys.update(str(k) for k in block.keys())
+            if session_key in keys:
+                return os.path.basename(path).split("_", 1)[0]
+        return ""
+
     def decider_ids(self) -> set[str]:
         return {str(d.get("user_id", "")) for d in self.deciders if d.get("user_id")}
 
