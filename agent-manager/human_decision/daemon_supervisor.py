@@ -34,6 +34,11 @@ _LOG_DIR = os.path.join(_PARENT, "logs")
 _SUPERVISOR_LOG = os.path.join(_LOG_DIR, "hitl-supervisor.log")
 _DAEMON_OUT = os.path.join(_LOG_DIR, "hitl-daemon.out.log")
 _LOCK = os.path.join(_LOG_DIR, "hitl-supervisor.lock")
+_LOCK_HANDLE = None
+
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
+from human_decision.process_lock import ProcessLock, pid_alive  # noqa: E402
 
 RESTART_BACKOFF_SECONDS = 10   # daemon 崩溃后重启间隔
 BUSY_BACKOFF_SECONDS = 60      # 退出码 2（他实例在跑）时的重试间隔
@@ -46,45 +51,14 @@ def log(msg: str) -> None:
         f.write(line)
 
 
-def pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        if os.name == "nt":
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(0x1000, False, pid)
-            if handle:
-                kernel32.CloseHandle(handle)
-                return True
-            return False
-        os.kill(pid, 0)
-        return True
-    except Exception:
-        return False
-
-
 def acquire_lock() -> bool:
-    os.makedirs(_LOG_DIR, exist_ok=True)
-    for _ in range(2):
-        try:
-            fd = os.open(_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(str(os.getpid()))
-            return True
-        except FileExistsError:
-            try:
-                old = int((open(_LOCK, encoding="utf-8").read() or "0").strip() or "0")
-            except (OSError, ValueError):
-                old = 0
-            if pid_alive(old):
-                return False
-            try:
-                os.unlink(_LOCK)
-            except OSError:
-                return False
-    return False
+    """单实例保护：PID + 启动时间 + token；陈旧锁自动隔离。"""
+    global _LOCK_HANDLE
+    lock = ProcessLock(_LOCK, "supervisor")
+    ok, _reason = lock.acquire()
+    if ok:
+        _LOCK_HANDLE = lock
+    return ok
 
 
 def main() -> int:
@@ -111,10 +85,8 @@ def main() -> int:
                 log(f"daemon 退出 rc={rc}，{RESTART_BACKOFF_SECONDS}s 后重启")
                 time.sleep(RESTART_BACKOFF_SECONDS)
     finally:
-        try:
-            os.unlink(_LOCK)
-        except OSError:
-            pass
+        if _LOCK_HANDLE is not None:
+            _LOCK_HANDLE.release()
         log("supervisor 退出")
 
 

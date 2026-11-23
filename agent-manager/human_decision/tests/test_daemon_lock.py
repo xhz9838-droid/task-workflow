@@ -17,7 +17,8 @@ def test_stale_lock_is_taken_over(tmp_path):
     lock = tmp_path / "hitl-daemon.lock"
     lock.write_text("0", encoding="utf-8")          # 0 = 必然不存活
     assert cli._acquire_daemon_lock(str(lock)) is True
-    assert lock.read_text(encoding="utf-8").strip() == str(os.getpid())
+    import json
+    assert json.loads(lock.read_text(encoding="utf-8"))["pid"] == os.getpid()
     cli._release_daemon_lock(str(lock))
     assert not lock.exists()
 

@@ -32,6 +32,9 @@ except Exception:
     pass
 
 from human_decision.decision_manager import DecisionManager  # noqa: E402
+from human_decision.process_lock import ProcessLock, pid_alive  # noqa: E402
+
+_DAEMON_LOCK: ProcessLock | None = None
 
 
 def _print(obj) -> None:
@@ -43,70 +46,25 @@ def _daemon_lock_path() -> str:
 
 
 def _pid_alive(pid: int) -> bool:
-    """Windows 安全的存活探测（os.kill(pid,0) 在 Windows 是 TerminateProcess，禁用）。"""
-    if pid <= 0:
-        return False
-    try:
-        import psutil  # type: ignore
-
-        return psutil.pid_exists(pid)
-    except ImportError:
-        pass
-    try:
-        if os.name == "nt":
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-            if handle:
-                kernel32.CloseHandle(handle)
-                return True
-            return False
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-    except Exception:
-        return False
+    """兼容旧调用；统一走 process_lock。"""
+    return pid_alive(pid)
 
 
 def _acquire_daemon_lock(path: str) -> bool:
-    """单实例保护：PID 锁文件 + 陈旧锁自动接管。返回 True=获得锁。"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    for _ in range(2):
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(str(os.getpid()))
-            return True
-        except FileExistsError:
-            try:
-                with open(path, encoding="utf-8") as f:
-                    old_pid = int((f.read() or "0").strip() or "0")
-            except (OSError, ValueError):
-                old_pid = 0
-            if _pid_alive(old_pid):
-                return False  # 已有存活实例
-            # 陈旧锁 → 收回
-            try:
-                os.unlink(path)
-            except OSError:
-                return False
-    return False
+    """单实例保护：PID + 启动时间 + token；陈旧锁自动隔离。"""
+    global _DAEMON_LOCK
+    lock = ProcessLock(path, "daemon")
+    ok, _reason = lock.acquire()
+    if ok:
+        _DAEMON_LOCK = lock
+    return ok
 
 
 def _release_daemon_lock(path: str) -> None:
-    try:
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
-        return
-    # Windows 下必须先关闭文件句柄再 unlink，否则删除被拒绝
-    if (content or "").strip() == str(os.getpid()):
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+    global _DAEMON_LOCK
+    if _DAEMON_LOCK is not None:
+        _DAEMON_LOCK.release()
+        _DAEMON_LOCK = None
 
 
 def cmd_daemon(mgr: DecisionManager, args) -> int:
