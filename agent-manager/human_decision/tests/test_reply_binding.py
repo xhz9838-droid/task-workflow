@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from human_decision.models import DecisionStatus
+from human_decision.models import DecisionStatus, ResumeMethod
 
 UID = "17248148409976157"
 KEY = "dingtalk:d:cidSMSg0KkgNzAaeL1GcWcR8dGpepImrpvAWt9tJA3q9CU=:" + UID
@@ -182,6 +182,16 @@ def test_stale_decision_still_accepts_explicit_id(handler, store, manager):
                        chat_session_key=KEY, msg_id="m-stale-id", msg_ts=_iso())
     assert r["outcome"] == "accepted"
     assert r["decision_id"] == stale.decision_id
+
+
+def test_manual_decision_without_tool_wait_uses_checkpoint(handler, store, manager):
+    """手工/CLI 创建的决策没有 tool_waiting，不能虚报 live_continue。"""
+    rec = _mk(manager)
+    r = handler.handle(raw_text="B", source="watch", user_id=UID,
+                       chat_session_key=KEY, msg_id="m-no-wait", msg_ts=_iso())
+    assert r["outcome"] == "accepted"
+    got = store.get(rec.decision_id)
+    assert got.resume_method == ResumeMethod.CHECKPOINT_REBUILD
 
 
 def test_late_reply_after_suspend_is_accepted(handler, store, manager):

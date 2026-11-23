@@ -21,6 +21,8 @@ def test_full_flow_decided(manager, store, notifier):
     assert rec.status == DecisionStatus.WAITING_REPLY
     assert notifier.sent and notifier.sent[0][0] == "decision_request"
 
+    # 模拟真实 MCP 工具已在等待（否则手工决策应走 checkpoint）
+    store.log_event(rec.decision_id, "tool_waiting", {"wait_seconds": 300})
     r = manager.apply_reply(
         raw_text="A", source="test", user_id="u1",
         chat_session_key=rec.cc_session_key,

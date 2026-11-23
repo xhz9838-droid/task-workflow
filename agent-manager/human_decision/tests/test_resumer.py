@@ -23,6 +23,7 @@ def _decided(store, decision_id="DEC-R1-001"):
 
 def test_resume_live_continue_when_tool_waiting(resumer, store):
     rec = _decided(store)
+    store.log_event(rec.decision_id, "tool_waiting", {"wait_seconds": 300})
     out = resumer.resume(rec)
     assert out["resume_method"] == ResumeMethod.LIVE_CONTINUE.value
     got = store.get(rec.decision_id)

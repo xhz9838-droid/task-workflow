@@ -45,6 +45,11 @@ class SessionResumer:
         self._log = logger or (lambda m: None)
 
     # ------------------------------------------------------- 对外入口
+    def _tool_was_waiting(self, decision_id: str) -> bool:
+        """是否存在真实的 MCP 工具等待记录（手工/CLI 创建的决策没有）。"""
+        return any(ev.get("event") == "tool_waiting"
+                   for ev in self.store.events(decision_id))
+
     def _tool_suspended(self, decision_id: str) -> bool:
         """阻塞工具是否已超时挂起（最后一次 tool_waiting 之后出现过 tool_suspended）。"""
         suspended = False
@@ -57,13 +62,14 @@ class SessionResumer:
 
     def resume(self, rec: DecisionRecord) -> dict:
         """按优先级尝试恢复。返回 {resume_method, detail}。"""
+        waiting = self._tool_was_waiting(rec.decision_id)
         tool_suspended = self._tool_suspended(rec.decision_id)
         packet_path = self.write_resume_packet(rec)
 
         method: ResumeMethod
         detail = ""
 
-        if not tool_suspended:
+        if waiting and not tool_suspended:
             # 阻塞中的工具仍在等待 → 工具自取回，原进程原地继续（最强恢复）
             method = ResumeMethod.LIVE_CONTINUE
             detail = "blocked tool polling decision store (live continuation)"
