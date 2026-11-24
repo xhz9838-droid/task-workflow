@@ -140,7 +140,7 @@ DEC DecisionStatus.RESUMED A A
 ## 8. Git 状态
 
 - 源码 `main`：代码提交 `8157a74`；工作区仅剩 `config/projects/jeebootx.yaml` 他人未提交修改（未触碰）。
-- 发行版 `master`：代码提交 `06bf7ad`；`origin/master` 为 `f77e5c3`，本地领先 2 个提交（代码 + 本文档）；工作区干净。
+- 发行版 `master`：代码提交 `06bf7ad`；`origin/master` 为 `f77e5c3`，本地领先 3 个提交（代码 2 + 本文档；后续修复 SHA 见 git log）；工作区干净。
 - 未 push、未 Tag、未改 VERSION、未全局发布。
 - 本文件随后的文档提交仅补充 SHA/验收结论，不改运行时代码。
 

@@ -444,7 +444,7 @@ def install_default(source: str, user_claude: str, base: str = "",
         "logs": logs,
         "backups": backups,
         "python": python_bin,
-        "mcp": bool(with_mcp),
+        "mcp": bool(_mcp_path(_mcp_entry(paths(runtime, user_claude)["claude_json"]))),
     }
     _write_json(os.path.join(base, "install.json"), manifest)
     st = status(runtime, user_claude)
