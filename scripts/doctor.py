@@ -82,6 +82,8 @@ def collect(project: str = "", user: str = "") -> dict:
     if home:
         # .env 键（只报键名，不报值）
         env_path = os.path.join(home, ".env")
+        if not os.path.isfile(env_path):
+            env_path = os.path.join(home, "config", ".env")
         keys = []
         if os.path.isfile(env_path):
             with open(env_path, encoding="utf-8") as f:

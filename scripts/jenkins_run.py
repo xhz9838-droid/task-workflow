@@ -123,6 +123,8 @@ def _load_env():
     """加载项目根目录 .env，不覆盖系统环境变量。"""
 
     envfile = os.path.join(ROOT, ".env")
+    if not os.path.exists(envfile):
+        envfile = os.path.join(ROOT, "config", ".env")
 
     if os.path.exists(envfile):
         with open(envfile, encoding="utf-8-sig") as f:

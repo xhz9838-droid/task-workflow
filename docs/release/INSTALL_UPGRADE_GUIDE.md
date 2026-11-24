@@ -1,6 +1,32 @@
 # 安装 / 升级 / 迁移指南（2026-11-24）
 
-## 1. 首次安装
+## 0. 默认用户目录（发行版推荐）
+
+```bash
+# 安装到 ~/.workflow（macOS $HOME/.workflow）
+bash scripts/install.sh --default-dir
+bash scripts/install.sh --default-dir --with-mcp
+
+# 自定义根（支持 D 盘、含空格路径）
+bash scripts/install.sh --default-dir --dir "D:/My Workflows"
+```
+
+结构：
+
+```text
+.workflow/
+├── runtime/        # 程序
+├── config/         # 配置 + .env
+├── data/execution/ # 执行状态/checkpoint
+├── logs/           # SQLite/HITL 日志
+├── backups/
+└── install.json
+```
+
+程序目录中的 `config`、`execution`、`agent-manager/logs` 链接到上述用户目录；
+默认目录安装后再用 `--default-dir` 即为原目录升级。
+
+## 1. 首次安装（run-in-place）
 
 ```bash
 cd <WORKFLOW_HOME>

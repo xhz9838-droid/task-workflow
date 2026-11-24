@@ -100,6 +100,8 @@ class JenkinsAdapter:
         }
         # 检查 .env 是否配 Jenkins
         envf = os.path.join(_ROOT, ".env")
+        if not os.path.exists(envf):
+            envf = os.path.join(_ROOT, "config", ".env")
         if os.path.exists(envf):
             txt = open(envf, encoding="utf-8", errors="replace").read()
             has_url = "JENKINS_URL=" in txt and not txt.split("JENKINS_URL=")[1][:1].startswith("\n")

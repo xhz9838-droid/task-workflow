@@ -4,11 +4,13 @@
 
 | 源码 | 发行版 | 说明 |
 |---|---|---|
-| `scripts/install_manager.py`（新增） | 同路径 | 状态/检测/MCP 同步/迁移核心 |
+| `scripts/install_manager.py`（新增） | 同路径 | 状态/检测/MCP 同步/迁移 + 默认目录 `install-default` |
+| `scripts/install.sh` | 同路径 | `--upgrade`/`--migrate`/`--default-dir`/`--dir`/统一 `--check`/MCP 同步 |
+| `scripts/_config.py` / `doctor.py` / `jenkins_run.py` / `agent-manager/jenkins_adapter.py` | 同路径 | 支持 `config/.env`（默认目录） |
+| `tests/test_install_flags.py` | 同路径 | 安装/升级/迁移/回滚（9 项） |
+| `tests/test_install_default.py`（新增） | 同路径 | 默认目录/独立运行/空格路径/迁移（4 项） |
 | `scripts/hitl_hook.py` | 同路径 | Hook 幂等合并（新增） |
-| `scripts/install.sh` | 同路径 | `--upgrade`/`--migrate`/统一 `--check`/MCP 同步 |
-| `tests/test_install_flags.py` | 同路径 | 安装/升级/迁移/数据保护测试（发行版） |
-| `docs/release/*.md` | 同路径 | 审计/设计/指南/验收 |
+| `docs/release/*.md` | 同路径 | 审计/设计/指南/验收/最终验收 |
 
 源码 `install.sh` 保留开发布局（`.claude/skills/`、`workflow-register-project`），发行版 `install.sh` 为分发入口（`skill/`、`--check/--init-config/--upgrade/--migrate`）；两者行为契约一致。
 
@@ -22,7 +24,7 @@
 ## 3. 发行版测试
 
 ```text
-python -I -m pytest                      → 308 passed
+python -I -m pytest                      → 313 passed
 python -I -m pytest agent-manager/human_decision/tests → 110 passed
 ```
 

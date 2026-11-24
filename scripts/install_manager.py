@@ -18,7 +18,14 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -29,6 +36,7 @@ AGENTS = ("dw-architect", "dw-database", "dw-java-backend", "dw-web-frontend",
 MCP_NAME = "human-decision"
 ROUTER_REL = os.path.join("agent-manager", "human_decision", "prompt_router.py")
 MCP_REL = os.path.join("agent-manager", "human_decision", "mcp_server.py")
+DEFAULT_BASE = os.path.join("~", ".workflow")
 
 
 def _now() -> str:
@@ -209,7 +217,8 @@ def status(root: str, user_claude: str) -> dict:
 
     data = {
         "config": os.path.isfile(os.path.join(root_n, "config", "workflow.yaml")),
-        "env": os.path.isfile(os.path.join(root_n, ".env")),
+        "env": os.path.isfile(os.path.join(root_n, ".env")) or
+               os.path.isfile(os.path.join(root_n, "config", ".env")),
         "execution": os.path.isdir(os.path.join(root_n, "execution")),
         "db": os.path.isfile(os.path.join(root_n, "agent-manager", "logs", "agent_manager.db")),
     }
@@ -237,6 +246,7 @@ def status(root: str, user_claude: str) -> dict:
     else:
         overall = "INSTALLED" if installed else "DEGRADED"
     return {"overall": overall, "root": root_n, "checks": checks,
+            "ready": overall in ("INSTALLED", "UPDATE_AVAILABLE"),
             "old_roots": detect(root, user_claude)["old_roots"]}
 
 
@@ -264,6 +274,183 @@ def _copy_db(src: str, dst: str) -> None:
     finally:
         s.close()
         d.close()
+
+
+# ----------------------------------------------------- 默认目录（~/.workflow）
+def _is_link(path: str) -> bool:
+    if os.path.islink(path):
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    return bool(isjunction and isjunction(path))
+
+
+def _link_dir(target: str, link: str) -> bool:
+    """runtime/config、runtime/execution、runtime/agent-manager/logs → 用户数据目录。"""
+    target = os.path.abspath(target)
+    link = os.path.abspath(link)
+    if os.path.exists(link):
+        if _is_link(link) and os.path.realpath(link) == os.path.realpath(target):
+            return True
+        return False
+    os.makedirs(os.path.dirname(link), exist_ok=True)
+    try:
+        os.symlink(target, link, target_is_directory=True)
+        return True
+    except OSError:
+        pass
+    if os.name != "nt":
+        return False
+    try:
+        p = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
+                           capture_output=True, text=True, timeout=30)
+        return p.returncode == 0 and os.path.exists(link)
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _link_env(config_dir: str, runtime: str) -> None:
+    """config/.env 为真实文件；runtime/.env 用同卷硬链接（失败则复制）。"""
+    env = os.path.join(config_dir, ".env")
+    rt = os.path.join(runtime, ".env")
+    if not os.path.isfile(env) or os.path.exists(rt):
+        return
+    try:
+        os.link(env, rt)
+    except OSError:
+        shutil.copy2(env, rt)
+
+
+_RUNTIME_EXCLUDES = {
+    ".git", ".github", ".env", "config", "execution", "logs", "data", "backups",
+    "tests", "docs", "reports", "__pycache__", ".pytest_cache", ".workflow", "runtime",
+}
+
+
+def _copy_runtime(source: str, runtime: str) -> None:
+    """复制程序文件；配置/数据/日志目录由软链指向用户目录。"""
+    source = os.path.abspath(source)
+
+    def _ignore(dirpath, names):
+        out = set()
+        base = os.path.basename(dirpath).lower()
+        for name in names:
+            if name.lower() in _RUNTIME_EXCLUDES or name.lower().endswith(".pyc"):
+                out.add(name)
+        if base == "logs":
+            out.update(names)
+        return out
+
+    shutil.copytree(source, runtime, dirs_exist_ok=True, ignore=_ignore)
+
+
+def _copy_logs(old_logs: str, new_logs: str) -> None:
+    if not os.path.isdir(old_logs):
+        return
+    os.makedirs(new_logs, exist_ok=True)
+    for name in os.listdir(old_logs):
+        if name == "agent_manager.db":
+            continue
+        src = os.path.join(old_logs, name)
+        dst = os.path.join(new_logs, name)
+        if os.path.isfile(src) and not os.path.exists(dst):
+            shutil.copy2(src, dst)
+
+
+def install_default(source: str, user_claude: str, base: str = "",
+                    python_bin: str = "python", with_mcp: bool = False) -> dict:
+    """把发行版复制到 ~/.workflow/runtime，并与 config/data/logs 分离。"""
+    source = os.path.abspath(source)
+    base = os.path.abspath(os.path.expanduser(base or DEFAULT_BASE))
+    runtime = os.path.join(base, "runtime")
+    config = os.path.join(base, "config")
+    data = os.path.join(base, "data")
+    logs = os.path.join(base, "logs")
+    backups = os.path.join(base, "backups")
+
+    for rel in ("config/workflow.yaml", "scripts/_config.py", "skill/SKILL.md"):
+        if not os.path.exists(os.path.join(source, rel)):
+            raise ValueError("NOT_A_DISTRIBUTION：缺少 %s" % rel)
+
+    det = detect(runtime, user_claude)
+    old_roots = det["old_roots"]
+    if len(old_roots) > 1:
+        raise ValueError("MULTIPLE_OLD_ROOTS " + json.dumps(old_roots, ensure_ascii=False))
+    old = next(iter(old_roots), "")
+
+    for d in (base, config, data, os.path.join(data, "execution"), logs, backups):
+        os.makedirs(d, exist_ok=True)
+    if old and os.path.abspath(old) not in (runtime, base):
+        _copy_missing(os.path.join(old, "config"), config)
+        old_env = os.path.join(old, ".env")
+        if os.path.isfile(old_env) and not os.path.isfile(os.path.join(config, ".env")):
+            shutil.copy2(old_env, os.path.join(config, ".env"))
+        _copy_missing(os.path.join(old, "execution"), os.path.join(data, "execution"))
+        _copy_logs(os.path.join(old, "agent-manager", "logs"), logs)
+        _copy_db(os.path.join(old, "agent-manager", "logs", "agent_manager.db"),
+                 os.path.join(logs, "agent_manager.db"))
+
+    if os.path.normcase(os.path.abspath(source)) != os.path.normcase(runtime):
+        _copy_missing(os.path.join(source, "config"), config)
+        _copy_runtime(source, runtime)
+    for target, link in ((config, os.path.join(runtime, "config")),
+                         (os.path.join(data, "execution"), os.path.join(runtime, "execution")),
+                         (logs, os.path.join(runtime, "agent-manager", "logs"))):
+        if not _link_dir(target, link):
+            raise ValueError("LINK_FAILED：%s → %s（目录已存在且不是本安装创建的链接）" % (link, target))
+    _link_env(config, runtime)
+
+    env = dict(os.environ, WORKFLOW_USER_CLAUDE=user_claude, PYTHON_BIN=python_bin,
+               WORKFLOW_ALLOW_CROSS_ROOT="1")
+    cmd = ["bash", os.path.join(runtime, "scripts", "install.sh")]
+    if with_mcp:
+        cmd.append("--with-mcp")
+    p = None
+    for attempt in (1, 2):
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", env=env, timeout=180)
+            break
+        except subprocess.TimeoutExpired:
+            if attempt == 2:
+                raise
+    if p.returncode != 0:
+        raise ValueError("INSTALL_FAILED：%s\n%s" % (p.stdout.strip(), p.stderr.strip()))
+    # 用户级 JSON 优先于 .home，必须与 runtime 同步
+    up = paths(runtime, user_claude)["user_json"]
+    if old or os.path.isfile(up):
+        _backup(up)
+        uj = _read_json(up) or {}
+        uj["workflow_home"] = runtime
+        _write_json(up, uj)
+    # 旧 MCP 已注册但未显式 --with-mcp：仍要跟随新根，否则留下旧路径
+    if not with_mcp and _mcp_path(_mcp_entry(paths(runtime, user_claude)["claude_json"])):
+        sync_mcp(runtime, user_claude)
+
+    version = ""
+    try:
+        with open(os.path.join(runtime, "VERSION"), encoding="utf-8") as f:
+            version = f.read().strip()
+    except OSError:
+        pass
+    manifest = {
+        "schema": 1,
+        "installed_at": _now(),
+        "version": version,
+        "source": source,
+        "home": base,
+        "runtime": runtime,
+        "config": config,
+        "data": data,
+        "logs": logs,
+        "backups": backups,
+        "python": python_bin,
+        "mcp": bool(with_mcp),
+    }
+    _write_json(os.path.join(base, "install.json"), manifest)
+    st = status(runtime, user_claude)
+    return {"manifest": manifest, "status": st["overall"], "ready": st.get("ready", False),
+            "old_root": old, "installer": p.stdout.strip()}
+
 
 
 def sync_mcp(root: str, user_claude: str) -> dict:
@@ -356,7 +543,7 @@ def _print_status(st: dict, as_json: bool) -> None:
         if c["fix"] and c["status"] != "OK":
             print("  Fix: %s" % c["fix"])
         print()
-    print("Overall:\n  %s" % st["overall"])
+    print("Overall:\n  %s%s" % (st["overall"], " (READY)" if st.get("ready") else ""))
     if st.get("old_roots"):
         print("\nOld runtime roots:\n  " + json.dumps(st["old_roots"], ensure_ascii=False))
 
@@ -371,6 +558,13 @@ def main(argv=None) -> int:
         sp.add_argument("--json", action="store_true")
         if name == "migrate":
             sp.add_argument("--python", default="python")
+    sp = sub.add_parser("install-default")
+    sp.add_argument("--source", required=True)
+    sp.add_argument("--user-claude", required=True)
+    sp.add_argument("--dir", default="", help="安装根（默认 ~/.workflow）")
+    sp.add_argument("--python", default="python")
+    sp.add_argument("--with-mcp", action="store_true")
+    sp.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     try:
         if args.cmd == "status":
@@ -384,6 +578,11 @@ def main(argv=None) -> int:
         if args.cmd == "sync-mcp":
             print(json.dumps(sync_mcp(args.root, args.user_claude), ensure_ascii=False))
             return 0
+        if args.cmd == "install-default":
+            log = install_default(args.source, args.user_claude, args.dir,
+                                  args.python, args.with_mcp)
+            print(json.dumps(log, ensure_ascii=False, indent=2))
+            return 0 if log.get("ready") else 1
         log = migrate(args.root, args.user_claude, args.python)
         print(json.dumps(log, ensure_ascii=False, indent=2))
         return 0 if log.get("status") in ("INSTALLED", "UPDATE_AVAILABLE") else 1

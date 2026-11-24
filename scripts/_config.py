@@ -52,6 +52,14 @@ def config_dir() -> str:
     return os.path.join(workflow_root(), "config")
 
 
+def env_file() -> str:
+    """默认目录布局优先 config/.env；旧 run-in-place 仍读根 .env。"""
+    for p in (os.path.join(config_dir(), ".env"), os.path.join(workflow_root(), ".env")):
+        if os.path.isfile(p):
+            return p
+    return os.path.join(workflow_root(), ".env")
+
+
 class ConfigError(Exception):
     """配置缺失或非法——必须人工处理，不猜测。
 
@@ -101,7 +109,7 @@ def _read_yaml(path: str):
 
 def _read_env(path: str = None) -> dict:
     """读 .env（KEY=VALUE），不覆盖已有进程环境变量。"""
-    path = path or os.path.join(workflow_root(), ".env")
+    path = path or env_file()
     out = {}
     if not os.path.exists(path):
         return out
@@ -169,7 +177,7 @@ def _deep_merge(base: dict, over: dict) -> dict:
 def load_config(project_key: str = None, user_id: str = None, *, strict: bool = True) -> dict:
     """按顺序合并配置。strict=True 时 project_key/user_id 必须存在。"""
     root = workflow_root()
-    env = _read_env(os.path.join(root, ".env"))
+    env = _read_env(env_file())
     env_full = dict(os.environ)
     env_full.update(env)
 
