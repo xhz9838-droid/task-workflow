@@ -8,11 +8,11 @@
 | 编号 | 测试内容 | 自动化 | 真实钉钉 | 证据/说明 |
 |---|---|---|---|---|
 | D01 | 裸回复 A | PASS | **PASS** | 2026-11-23 真实 Claude Session 测试，`DEC-HITL-SESSION-...` 回复 A 被接受 |
-| D02 | decision_id + A | PASS | **PASS** | 同上，用户发送 `DEC-HITL-SESSION-... A` 被接受 |
-| D03 | decision_id + C + 自定义意见 | PASS | **NOT_TESTED** | 已发出 3 条测试决策，等待用户回复 |
-| D04 | 选项 + 自定义意见 | PASS | **NOT_TESTED** | `test_reply_formats` 覆盖 `C，建议…` |
-| D05 | 自然语言选择 | PASS | **NOT_TESTED** | `我选择 A，按第一个方案执行` 解析通过 |
-| D06 | 重复发送同一消息 | PASS | **PARTIAL** | 早前显式 DEC-ID 重复回复被拒（RESUMED）；本轮多决策重复未测 |
+| D02 | decision_id + A | PASS | **PASS** | 2026-11-24 真实回复 `DEC-HITL-REL-C/A/B-... A/B` 均一次接受 |
+| D03 | decision_id + C + 自定义意见 | PASS | **NOT_TESTED** | 三条测试决策均以 A/B 回复，未发送 C + 自定义意见 |
+| D04 | 选项 + 自定义意见 | PASS | **NOT_TESTED** | `test_reply_formats` 覆盖 `C，建议…`；真实未测 |
+| D05 | 自然语言选择 | PASS | **NOT_TESTED** | `我选择 A，按第一个方案执行` 解析通过；真实未测 |
+| D06 | 重复发送同一消息 | PASS | **NOT_TESTED（本轮）** | 早前显式 DEC-ID 重复回复被拒（RESUMED）；本轮未重复发送 |
 
 ## 2. 多决策并发
 
@@ -30,15 +30,17 @@ DEC-HITL-REL-C-20261124-11591103
 2. `DEC-...A B`、`DEC-...B A`、`DEC-...C C 自定义意见` → 分别处理一次；
 3. 重复 `DEC-...A B` → 不再次恢复。
 
-当前状态：
+当前状态（2026-11-24 13:39）：
 
-- `DEC-HITL-REL-C-...` 于 11:59:46 收到真实回复 `DEC-HITL-REL-C-... A`，**一次接受**，
-  status 变为 RESUMED；
-- A/B 两条仍为 `WAITING_REPLY`；
-- 裸 `B` 多候选歧义尚未真实触发。
+- `DEC-HITL-REL-C-...` 11:59:46 收到 `DEC-... A`，一次接受；
+- `DEC-HITL-REL-A-...` 13:38:34 收到 `DEC-... A`，一次接受；
+- `DEC-HITL-REL-B-...` 13:39:08 收到 `DEC-... B`，一次接受；
+- 三条均 `RESUMED`（`checkpoint_rebuild`，无原 Session）；
+- 13:39:52 用户在所有决策已决后发送裸 `B`，系统返回“当前没有匹配的待决决策”，
+  没有串到其他决策（正确的拒绝）。
 
-因此真实多决策测试标记 **PARTIAL（1/3 已处理）**；自动化测试
-`test_multiple_fresh_unbound_requires_dec_id_with_candidates` 已通过。
+真实“多个待决同时存在时裸 B 应提示 DEC-ID”**未实测**（用户先按 DEC-ID 回复完了）；
+自动化 `test_multiple_fresh_unbound_requires_dec_id_with_candidates` 已通过。
 
 ## 3. 消息风暴
 
@@ -49,8 +51,10 @@ DEC-HITL-REL-C-20261124-11591103
 自动化/代码证据：DingTalk legacy 模式下，thinking/tool 事件的逐条发送被 display 开关关闭；
 最终回复不受影响。
 
-真实消息条数：**NOT_TESTED**。本轮没有可自动注入的“钉钉用户消息”，
-需要用户在钉钉发一条普通消息后肉眼/日志确认。未记录“修复前/后实际发送条数”。
+真实消息条数：**用户确认“已完成”测试，未再反馈风暴**；
+cc-connect 日志对 11:57 / 13:38 / 13:39 的每轮只有一次 `turn complete` 与一次
+`slow agent send`（最终回复），没有逐条 thinking/tool 发送记录。
+**未采集精确发送条数**，因此不断言“从 N 条降到 M 条”。
 
 ## 4. 多用户
 

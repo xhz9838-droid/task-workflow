@@ -104,7 +104,9 @@ tool_messages = false
 | HITL 裸回复 B | 同样触发一轮 Agent + 多条思考 | 仍可能跑一轮 Agent，但无 thinking/tool 刷屏 |
 | 关键决策通知 | 正常发送 | 正常发送（不受 display 影响） |
 
-真实消息条数需要在钉钉侧复测；本轮**未记录到实际发送条数**，不宣称定量通过。
+真实消息条数：用户确认已完成复测，未再反馈风暴；cc-connect 日志对 11:57 / 13:38 / 13:39
+每轮只有一次 `turn complete` 与一次 `slow agent send`（最终回复），没有逐条 thinking/tool
+发送记录。未采集精确条数，不宣称“从 N 条降到 M 条”。
 
 ## 6. 剩余风险
 

@@ -91,15 +91,17 @@ HITL watcher 只是旁路读取，不会阻止 cc-connect 跑这轮 Agent。
 
 对应测试：`test_reply_formats.py` 12 项。
 
-## 5. 真实复测状态
+## 5. 真实复测状态（2026-11-24）
 
-已创建三条受控测试决策（同一钉钉聊天，均 WAITING_REPLY）：
+三条受控测试决策均收到真实钉钉回复并一次接受：
 
-```text
-DEC-HITL-REL-A-20261124-11591001
-DEC-HITL-REL-B-20261124-11591002
-DEC-HITL-REL-C-20261124-11591103
-```
+| 决策 | 回复 | 结果 |
+|---|---|---|
+| `DEC-HITL-REL-C-...` | `DEC-... A` | RESUMED（checkpoint） |
+| `DEC-HITL-REL-A-...` | `DEC-... A` | RESUMED（checkpoint） |
+| `DEC-HITL-REL-B-...` | `DEC-... B` | RESUMED（checkpoint） |
 
-等待用户按 `docs` 的 D01–D06 发送真实回复；本轮**未收到回复**，
-因此真实钉钉解析通过不能标记为 PASS。
+- 首次发送即成功，没有再次出现“第一次失败、第二次成功”。
+- 所有决策已决后用户发送裸 `B`，系统返回“当前没有匹配的待决决策”，未串到其他决策。
+- 真实“多个待决同时存在时裸 B 应提示 DEC-ID”未实测；自动化测试覆盖。
+- 真实 C + 自定义意见、自然语言格式未测（用户本轮用 A/B 回复）。
