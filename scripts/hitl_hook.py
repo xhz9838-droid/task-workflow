@@ -46,7 +46,7 @@ def _entries(data: dict) -> list:
 
 def _is_ours(entry: dict) -> bool:
     for h in (entry.get("hooks") or []):
-        if isinstance(h, dict) and MARKER in str(h.get("command") or ""):
+        if isinstance(h, dict) and MARKER in str(h.get("command") or "").replace("\\", "/"):
             return True
     return False
 
