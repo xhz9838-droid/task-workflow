@@ -24,7 +24,7 @@
 ## 3. 发行版测试
 
 ```text
-python -I -m pytest                      → 313 passed
+python -I -m pytest                      → 314 passed
 python -I -m pytest agent-manager/human_decision/tests → 110 passed
 ```
 

@@ -24,7 +24,7 @@ bash scripts/install.sh --default-dir --dir "D:/My Workflows"
 ```
 
 程序目录中的 `config`、`execution`、`agent-manager/logs` 链接到上述用户目录；
-默认目录安装后再用 `--default-dir` 即为原目录升级。
+默认目录安装后再用 `--default-dir` 即为原目录升级。同一用户目录禁止并发安装（锁冲突 exit 3）。
 
 ## 1. 首次安装（run-in-place）
 

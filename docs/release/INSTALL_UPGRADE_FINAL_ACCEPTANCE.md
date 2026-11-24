@@ -89,7 +89,7 @@ Python 子进程、Hook、MCP 均实测指向新 `runtime`；未出现旧路径�
 
 ## 4. 升级与迁移
 
-- 默认目录重复执行 `--default-dir`：幂等，Hook 不重复，代码副本更新。
+- 默认目录重复执行 `--default-dir`：幂等，Hook 不重复，代码副本更新；并发安装被锁拒绝（exit 3）。
 - 旧根 → 默认目录：
   - 旧 `config/projects`、`.env`、`execution`、SQLite、日志复制到新目录；
   - `.home`、用户 JSON、Hook、MCP 全部指向新 `runtime`；
@@ -133,14 +133,14 @@ DEC DecisionStatus.RESUMED A A
 | 范围 | 结果 |
 |---|---|
 | 源码全量 | **231 passed** |
-| 发行版全量 | **313 passed** |
+| 发行版全量 | **314 passed** |
 | 发行版 HITL | **110 passed** |
-| 安装/迁移专项 | **13 passed**（`test_install_flags.py` 9 + `test_install_default.py` 4） |
+| 安装/迁移专项 | **14 passed**（`test_install_flags.py` 9 + `test_install_default.py` 5） |
 
 ## 8. Git 状态
 
 - 源码 `main`：代码提交 `8157a74`；工作区仅剩 `config/projects/jeebootx.yaml` 他人未提交修改（未触碰）。
-- 发行版 `master`：代码提交 `06bf7ad`；`origin/master` 为 `f77e5c3`，本地领先 3 个提交（代码 2 + 本文档；后续修复 SHA 见 git log）；工作区干净。
+- 发行版 `master`：代码提交 `06bf7ad`；`origin/master` 为 `f77e5c3`，本地领先 4 个提交（代码/锁修复 + 文档；SHA 见 git log）；工作区干净。
 - 未 push、未 Tag、未改 VERSION、未全局发布。
 - 本文件随后的文档提交仅补充 SHA/验收结论，不改运行时代码。
 
@@ -148,6 +148,6 @@ DEC DecisionStatus.RESUMED A A
 
 1. **macOS 未实机**；软链/权限/Hook 执行需验证。
 2. 默认目录依赖目录链接；若用户环境禁止 symlink 且 `mklink /J` 不可用，安装会明确失败（不会静默复制造成数据分裂）。
-3. 首次默认安装曾出现 2 次 120s 超时（重试/直接执行即成功）；已把安装子进程改为 180s + 一次重试，仍建议观察 Windows 杀软扫描场景。
+3. 并发安装同一用户目录会争用文件锁（验收时并行执行曾触发超时）；已加 `.zentao-dev-workflow.install.lock`，第二个进程直接 exit 3；串行默认安装 3 次均 1–2s 通过。
 4. `backups/` 当前只创建目录；用户配置备份仍就近保存（`settings.json.bak.*` 等），未集中迁移。
 5. `install.json` 记录发行版来源路径（安装溯源用），不参与运行时解析；如交付要求零开发路径，可后续改为版本号/包名。
