@@ -82,10 +82,13 @@ class ReplyHandler:
             if parsed.decision_id:
                 reason = f"未找到决策 {parsed.decision_id}"
             elif len(candidates) > 1:
-                ids = "、".join(d.decision_id for d in candidates[:5])
-                reason = ("当前存在多个待处理决策，无法确定你的回复对应哪一个。"
-                          f"请使用 <决策编号> <选项>，例如：{candidates[0].decision_id} B。"
-                          f"候选：{ids}")
+                lines = []
+                for d in candidates[:5]:
+                    topic = (d.question or "").replace("\n", " ")[:40]
+                    lines.append(f"{d.decision_id}  任务 {d.task_id}  {topic}")
+                reason = ("当前存在多个待处理决策，无法确定你的回复对应哪一个。\n"
+                          "请使用 <决策编号> <选项>，例如："
+                          f"{candidates[0].decision_id} B\n候选：\n" + "\n".join(lines))
             else:
                 reason = "当前没有匹配的待决决策"
             # 未匹配的回复也留痕（空决策号 = 未绑定任何决策），便于事后诊断
@@ -241,12 +244,14 @@ class ReplyHandler:
         return eligible[0] if len(eligible) == 1 else None
 
     def _candidates(self, chat_session_key: str, msg_ts: str = "") -> list:
-        """当前聊天可自动匹配的候选：本聊天已绑定 + 有效未绑定。"""
+        """当前聊天可自动匹配的候选：只包含已绑定到本聊天的待决决策。
+
+        未绑定决策没有可靠的 Chat 关联证据，不参与裸选项匹配；只能用显式 DEC-ID。
+        """
         waiting = self.store.list_waiting()
         if not chat_session_key:
             return waiting
-        bound = [d for d in waiting if d.cc_session_key == chat_session_key]
-        return bound + self._eligible_unbound(waiting, msg_ts)
+        return [d for d in waiting if d.cc_session_key == chat_session_key]
 
     def _bind_chat(self, decision: DecisionRecord, chat_session_key: str) -> None:
         """把未绑定决策绑定到实际回复的聊天，供后续通知/恢复使用。"""

@@ -36,6 +36,11 @@ def _mk(manager, task="3442"):
     )
 
 
+def _bind(store, rec, key=KEY):
+    store.update_fields(rec.decision_id, cc_session_key=key)
+    return rec
+
+
 def test_discover_chat_binding_prefers_configured_user(cfg):
     sdir = cfg.sessions_dir()
     os.makedirs(sdir, exist_ok=True)
@@ -75,8 +80,8 @@ def test_create_decision_binds_default_chat_without_env(cfg, manager, store):
     assert any(e["event"] == "binding_auto" for e in store.events(rec.decision_id))
 
 
-def test_unbound_reply_binds_single_waiting_decision(handler, store, manager):
-    rec = _mk(manager)
+def test_bound_single_reply_accepted(handler, store, manager):
+    rec = _bind(store, _mk(manager))
     r = handler.handle(raw_text="B", source="watch", user_id=UID,
                        chat_session_key=KEY, msg_id="m-single", msg_ts=_iso())
     assert r["outcome"] == "accepted"
@@ -89,14 +94,14 @@ def test_unbound_reply_binds_single_waiting_decision(handler, store, manager):
 
 def test_reply_does_not_misroute_to_resumed_decision(handler, store, manager):
     """复现事故：同聊天有已 RESUMED 决策 + 新的未绑定待决决策。"""
-    old = _mk(manager, task="3413")
+    old = _bind(store, _mk(manager, task="3413"))
     r0 = handler.handle(raw_text="A", source="watch", user_id=UID,
                         chat_session_key=KEY, msg_id="m-old", msg_ts=_iso())
     assert r0["outcome"] == "accepted"
     assert store.get(old.decision_id).status in (DecisionStatus.RESUMED,
                                                  DecisionStatus.RESUME_FAILED)
 
-    new = _mk(manager, task="3442")
+    new = _bind(store, _mk(manager, task="3442"))
     r = handler.handle(raw_text="B", source="watch", user_id=UID,
                        chat_session_key=KEY, msg_id="m-new", msg_ts=_iso())
     assert r["outcome"] == "accepted"
@@ -108,7 +113,7 @@ def test_reply_does_not_misroute_to_resumed_decision(handler, store, manager):
 
 def test_latest_unbound_decision_wins_with_clear_time_gap(handler, store, manager):
     older = _mk(manager, task="3657")
-    newer = _mk(manager, task="3442")
+    newer = _bind(store, _mk(manager, task="3442"))
     store.update_fields(older.decision_id, notified_at=_iso(24 * 60))
     store.update_fields(newer.decision_id, notified_at=_iso(1))
 
@@ -123,7 +128,7 @@ def test_latest_unbound_decision_wins_with_clear_time_gap(handler, store, manage
 def test_reminder_does_not_steal_reply_from_newer_decision(handler, store, manager):
     """旧决策的提醒时间晚于新决策通知时，仍应匹配新决策（事故同型）。"""
     older = _mk(manager, task="3657")
-    newer = _mk(manager, task="3442")
+    newer = _bind(store, _mk(manager, task="3442"))
     store.update_fields(older.decision_id,
                         notified_at=_iso(24 * 60), reminded_at=_iso(1))
     store.update_fields(newer.decision_id, notified_at=_iso(2))
@@ -135,8 +140,8 @@ def test_reminder_does_not_steal_reply_from_newer_decision(handler, store, manag
 
 
 def test_close_notifications_require_explicit_decision_id(handler, store, manager):
-    a = _mk(manager, task="3443")
-    b = _mk(manager, task="3444")
+    a = _bind(store, _mk(manager, task="3443"))
+    b = _bind(store, _mk(manager, task="3444"))
     store.update_fields(a.decision_id, notified_at=_iso(1))
     store.update_fields(b.decision_id, notified_at=_iso(1))
 
@@ -186,7 +191,7 @@ def test_stale_decision_still_accepts_explicit_id(handler, store, manager):
 
 def test_manual_decision_without_tool_wait_uses_checkpoint(handler, store, manager):
     """手工/CLI 创建的决策没有 tool_waiting，不能虚报 live_continue。"""
-    rec = _mk(manager)
+    rec = _bind(store, _mk(manager))
     r = handler.handle(raw_text="B", source="watch", user_id=UID,
                        chat_session_key=KEY, msg_id="m-no-wait", msg_ts=_iso())
     assert r["outcome"] == "accepted"
@@ -196,13 +201,13 @@ def test_manual_decision_without_tool_wait_uses_checkpoint(handler, store, manag
 
 def test_sample_a_first_reply_routes_to_newest_not_resumed(handler, store, manager):
     """复现样本 A：同聊天有 RESUMED 3413 + 过期 3657 + 新 3442，首次 B 应命中 3442。"""
-    old = _mk(manager, task="3413")
+    old = _bind(store, _mk(manager, task="3413"))
     r0 = handler.handle(raw_text="A", source="watch", user_id=UID,
                         chat_session_key=KEY, msg_id="m-old", msg_ts=_iso())
     assert r0["outcome"] == "accepted"
     stale = _mk(manager, task="3657")
     store.update_fields(stale.decision_id, notified_at=_iso(23 * 60))
-    fresh = _mk(manager, task="3442")
+    fresh = _bind(store, _mk(manager, task="3442"))
 
     r = handler.handle(raw_text="B", source="watch", user_id=UID,
                        chat_session_key=KEY, msg_id="m-first-b", msg_ts=_iso())
@@ -215,8 +220,8 @@ def test_sample_a_first_reply_routes_to_newest_not_resumed(handler, store, manag
 
 
 def test_multiple_fresh_unbound_requires_dec_id_with_candidates(handler, store, manager):
-    a = _mk(manager, task="3442")
-    b = _mk(manager, task="3657")
+    a = _bind(store, _mk(manager, task="3442"))
+    b = _bind(store, _mk(manager, task="3657"))
     store.update_fields(a.decision_id, notified_at=_iso())
     store.update_fields(b.decision_id, notified_at=_iso())
     r = handler.handle(raw_text="B", source="watch", user_id=UID,
@@ -259,7 +264,7 @@ def test_explicit_dec_id_from_other_chat_rejected(handler, store, manager):
 
 
 def test_late_reply_after_suspend_is_accepted(handler, store, manager):
-    rec = _mk(manager)
+    rec = _bind(store, _mk(manager))
     wait = manager.wait_for_decision(rec.decision_id, wait_seconds=0.2)
     assert wait["outcome"] == "suspended"
     assert store.get(rec.decision_id).status == DecisionStatus.WAITING_REPLY
