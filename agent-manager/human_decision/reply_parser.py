@@ -42,10 +42,26 @@ def parse_reply(text: str, option_ids: Iterable[str] = ()) -> ParsedReply:
                            invalid_reason="仅包含决策编号，没有回复内容", raw_text=text.strip())
 
     ids = {str(i).upper() for i in option_ids if i}
+
+    # 3. 选项 + 标点分隔（C，建议… / B: 同意 / A、方案一）
+    m_sep = re.match(r"^([A-Za-z])\s*[，,：:、。.;；]\s*(.*)$", raw, re.S)
+    if m_sep:
+        letter = m_sep.group(1).upper()
+        comment = m_sep.group(2).strip()
+        if not ids or letter in ids:
+            return ParsedReply(decision_id, ReplyKind.OPTION, choice=letter,
+                               comment=comment or None, raw_text=text.strip())
+        if comment:
+            return ParsedReply(decision_id, ReplyKind.CUSTOM, choice=letter,
+                               comment=comment, raw_text=text.strip())
+        return ParsedReply(decision_id, ReplyKind.OPTION, choice=letter, valid=False,
+                           invalid_reason=f"无效选项：{letter}（可选：{sorted(ids)}）",
+                           raw_text=text.strip())
+
     head, _, tail = raw.partition(" ")
     head_up = head.upper()
 
-    # 3. 选项匹配
+    # 4. 选项匹配
     if len(head_up) == 1 and head_up.isalpha():
         if not ids or head_up in ids:
             return ParsedReply(
@@ -69,7 +85,20 @@ def parse_reply(text: str, option_ids: Iterable[str] = ()) -> ParsedReply:
             comment=tail.strip() or None, raw_text=text.strip(),
         )
 
-    # 4. 其他文本：
+    # 5. 自然语言中的明确选择（仅在给出选项时启用，避免把任意 A/B/C 当选择）
+    if ids:
+        m_nl = re.search(r"(?:我)?(?:选择|选|按|采用|同意|接受)\s*([A-Za-z])(?![A-Za-z])", raw)
+        if m_nl:
+            letter = m_nl.group(1).upper()
+            comment = raw[m_nl.end():].lstrip(" 　，,：:、。.;；")
+            if letter in ids:
+                return ParsedReply(decision_id, ReplyKind.OPTION, choice=letter,
+                                   comment=comment or None, raw_text=text.strip())
+            return ParsedReply(decision_id, ReplyKind.OPTION, choice=letter, valid=False,
+                               invalid_reason=f"无效选项：{letter}（可选：{sorted(ids)}）",
+                               raw_text=text.strip())
+
+    # 6. 其他文本：
     #    有方案选项时，裸文本视为无效（防"收到/你好"等客套话被误当决策），
     #    要求按约定回复；无方案选项时，整条文本即决策意见。
     if ids:

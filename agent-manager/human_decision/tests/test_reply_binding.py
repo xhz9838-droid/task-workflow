@@ -143,7 +143,7 @@ def test_close_notifications_require_explicit_decision_id(handler, store, manage
     r = handler.handle(raw_text="B", source="watch", user_id=UID,
                        chat_session_key=KEY, msg_id="m-amb", msg_ts=_iso())
     assert r["outcome"] == "unmatched"
-    assert "多个待决决策" in r["reason"]
+    assert "多个待处理决策" in r["reason"]
     assert any(e["event"] == "reply_unmatched" for e in store.events(""))
 
     r2 = handler.handle(raw_text=f"{b.decision_id} B", source="watch", user_id=UID,
@@ -192,6 +192,70 @@ def test_manual_decision_without_tool_wait_uses_checkpoint(handler, store, manag
     assert r["outcome"] == "accepted"
     got = store.get(rec.decision_id)
     assert got.resume_method == ResumeMethod.CHECKPOINT_REBUILD
+
+
+def test_sample_a_first_reply_routes_to_newest_not_resumed(handler, store, manager):
+    """复现样本 A：同聊天有 RESUMED 3413 + 过期 3657 + 新 3442，首次 B 应命中 3442。"""
+    old = _mk(manager, task="3413")
+    r0 = handler.handle(raw_text="A", source="watch", user_id=UID,
+                        chat_session_key=KEY, msg_id="m-old", msg_ts=_iso())
+    assert r0["outcome"] == "accepted"
+    stale = _mk(manager, task="3657")
+    store.update_fields(stale.decision_id, notified_at=_iso(23 * 60))
+    fresh = _mk(manager, task="3442")
+
+    r = handler.handle(raw_text="B", source="watch", user_id=UID,
+                       chat_session_key=KEY, msg_id="m-first-b", msg_ts=_iso())
+    assert r["outcome"] == "accepted"
+    assert r["decision_id"] == fresh.decision_id
+    assert store.get(fresh.decision_id).reply_choice == "B"
+    assert store.get(old.decision_id).status in (DecisionStatus.RESUMED,
+                                                 DecisionStatus.RESUME_FAILED)
+    assert len(store.replies(old.decision_id)) == 1
+
+
+def test_multiple_fresh_unbound_requires_dec_id_with_candidates(handler, store, manager):
+    a = _mk(manager, task="3442")
+    b = _mk(manager, task="3657")
+    store.update_fields(a.decision_id, notified_at=_iso())
+    store.update_fields(b.decision_id, notified_at=_iso())
+    r = handler.handle(raw_text="B", source="watch", user_id=UID,
+                       chat_session_key=KEY, msg_id="m-amb2", msg_ts=_iso())
+    assert r["outcome"] == "unmatched"
+    assert a.decision_id in r["reason"] and b.decision_id in r["reason"]
+    assert "3413" not in r["reason"]
+
+    r2 = handler.handle(raw_text=f"{b.decision_id} B", source="watch", user_id=UID,
+                        chat_session_key=KEY, msg_id="m-amb2-id", msg_ts=_iso())
+    assert r2["outcome"] == "accepted"
+    assert r2["decision_id"] == b.decision_id
+
+
+def test_explicit_dec_id_binds_unbound_and_keeps_custom_comment(handler, store, manager):
+    rec = manager.create_decision(
+        task_id="3442", question="q",
+        options=[{"id": "A", "description": "A"}, {"id": "C", "description": "C"}],
+        project_key="jeebootx",
+    )
+    r = handler.handle(
+        raw_text=f"{rec.decision_id} C 自定义意见", source="watch", user_id=UID,
+        chat_session_key=KEY, msg_id="m-explicit-c", msg_ts=_iso())
+    assert r["outcome"] == "accepted"
+    got = store.get(rec.decision_id)
+    assert got.reply_choice == "C"
+    assert got.reply_comment == "自定义意见"
+    assert got.cc_session_key == KEY
+
+
+def test_explicit_dec_id_from_other_chat_rejected(handler, store, manager):
+    rec = _mk(manager, task="3442")
+    store.update_fields(rec.decision_id, cc_session_key=KEY)
+    other = "dingtalk:d:cidOTHER:" + UID
+    r = handler.handle(raw_text=f"{rec.decision_id} B", source="watch", user_id=UID,
+                       chat_session_key=other, msg_id="m-other-chat", msg_ts=_iso())
+    assert r["outcome"] == "rejected"
+    assert "其他会话" in r["reason"]
+    assert store.get(rec.decision_id).status == DecisionStatus.WAITING_REPLY
 
 
 def test_late_reply_after_suspend_is_accepted(handler, store, manager):

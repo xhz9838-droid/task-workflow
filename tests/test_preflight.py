@@ -195,7 +195,10 @@ def test_multiple_blocked_checks(tmp_path, monkeypatch):
 
 def test_repo_check_cli_has_output_and_exit_code(home, tmp_path):
     """repo_check.py 不再是静默模块：有输出、退出码明确。"""
-    env = dict(os.environ, WORKFLOW_HOME=str(home), PYTHONIOENCODING="utf-8")
+    userhome = tmp_path / "userhome"
+    userhome.mkdir()
+    env = dict(os.environ, WORKFLOW_HOME=str(home), PYTHONIOENCODING="utf-8",
+               HOME=str(userhome), USERPROFILE=str(userhome))
     cmd = [sys.executable, "-I", os.path.join(_SCRIPTS, "repo_check.py"),
            "--project", "demo", "--json"]
     ok = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)

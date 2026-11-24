@@ -78,10 +78,14 @@ class ReplyHandler:
         decision = self._resolve_decision(parsed.decision_id, chat_session_key, msg_ts)
         if decision is None:
             waiting = self.store.list_waiting()
+            candidates = self._candidates(chat_session_key, msg_ts) if chat_session_key else waiting
             if parsed.decision_id:
                 reason = f"未找到决策 {parsed.decision_id}"
-            elif len(waiting) > 1:
-                reason = "存在多个待决决策，请回复 <决策编号> <选项>"
+            elif len(candidates) > 1:
+                ids = "、".join(d.decision_id for d in candidates[:5])
+                reason = ("当前存在多个待处理决策，无法确定你的回复对应哪一个。"
+                          f"请使用 <决策编号> <选项>，例如：{candidates[0].decision_id} B。"
+                          f"候选：{ids}")
             else:
                 reason = "当前没有匹配的待决决策"
             # 未匹配的回复也留痕（空决策号 = 未绑定任何决策），便于事后诊断
@@ -89,10 +93,19 @@ class ReplyHandler:
                 "source": source, "user_id": user_id, "msg_id": msg_id,
                 "chat_session_key": chat_session_key, "text": text[:200],
                 "explicit_decision_id": parsed.decision_id or "",
-                "waiting": [d.decision_id for d in waiting[:5]],
+                "candidates": [d.decision_id for d in candidates[:5]],
             })
             return {"outcome": "unmatched", "decision_id": parsed.decision_id,
                     "reason": reason}
+
+        # 显式/已绑定决策不得跨聊天执行（CLI 运维入口除外）
+        if (source not in ("cli", "test") and chat_session_key
+                and decision.cc_session_key
+                and decision.cc_session_key != chat_session_key):
+            self._reject(decision, text, source, user_id, user_name, msg_id,
+                         parsed, "决策绑定到其他会话")
+            return {"outcome": "rejected", "decision_id": decision.decision_id,
+                    "reason": "决策绑定到其他会话"}
 
         # 防旧消息误伤：watch 来源只接受决策创建之后的消息（时间容差 60s）
         if source == "watch" and msg_ts and decision.created_at:
@@ -131,6 +144,10 @@ class ReplyHandler:
             ))
             return {"outcome": "duplicate", "decision_id": decision.decision_id,
                     "reason": f"决策已处理（{decision.status.value}）"}
+
+        # 有效回复才建立聊天绑定（避免未授权/非法回复抢先绑定）
+        if chat_session_key and not decision.cc_session_key:
+            self._bind_chat(decision, chat_session_key)
 
         rep = ReplyRecord(
             decision_id=decision.decision_id, raw_text=text, source=source,
@@ -195,7 +212,6 @@ class ReplyHandler:
                 "choice": parsed.choice, "comment": parsed.comment}
 
     # ------------------------------------------------------- 决策绑定
-    _AUTO_BIND_MIN_GAP_SECONDS = 3600
     _AUTO_BIND_MAX_AGE_SECONDS = 12 * 3600   # 超龄未绑定决策不自动认领，要求显式 DEC-ID
 
     @staticmethod
@@ -203,31 +219,34 @@ class ReplyHandler:
         # 提醒（reminded_at）不改变匹配优先级：旧决策的提醒不能抢新决策的回复
         return d.notified_at or d.created_at or ""
 
-    def _pick_unbound(self, unbound: list, msg_ts: str = "") -> Optional[DecisionRecord]:
-        """从未绑定会话的待决决策中选一个：最近通知且与次新间隔足够大才自动绑定。
-
-        - 多个决策并行且通知时间接近时返回 None，要求显式 DEC-ID，避免回复串到别的决策。
-        - 超龄（>12h）的未绑定决策不自动认领，避免过期决策吞掉新回复；仍可用 DEC-ID 回复。
-        """
+    def _eligible_unbound(self, waiting: list, msg_ts: str = "") -> list:
+        """未绑定会话、且在本条消息时间上下文中仍有效的待决决策。"""
         import time as _time
         reply_epoch = _epoch(msg_ts) or _time.time()
-        eligible = []
-        for d in unbound:
+        out = []
+        for d in waiting:
+            if d.cc_session_key:
+                continue
             anchor = _epoch(self._time_anchor(d))
             if anchor is not None and anchor > reply_epoch:
                 continue  # 决策晚于该消息，不可能是它的回复
             if anchor is not None and (reply_epoch - anchor) > self._AUTO_BIND_MAX_AGE_SECONDS:
                 continue  # 过期决策不自动认领
-            eligible.append(d)
-        if not eligible:
-            return None
-        if len(eligible) == 1:
-            return eligible[0]
+            out.append(d)
+        return out
 
-        eligible.sort(key=lambda d: _epoch(self._time_anchor(d)) or 0.0, reverse=True)
-        left = _epoch(self._time_anchor(eligible[0])) or 0.0
-        right = _epoch(self._time_anchor(eligible[1])) or 0.0
-        return eligible[0] if (left - right) >= self._AUTO_BIND_MIN_GAP_SECONDS else None
+    def _pick_unbound(self, unbound: list, msg_ts: str = "") -> Optional[DecisionRecord]:
+        """唯一未绑定待决决策才允许自动绑定；多个时返回 None（要求显式 DEC-ID）。"""
+        eligible = self._eligible_unbound(unbound, msg_ts)
+        return eligible[0] if len(eligible) == 1 else None
+
+    def _candidates(self, chat_session_key: str, msg_ts: str = "") -> list:
+        """当前聊天可自动匹配的候选：本聊天已绑定 + 有效未绑定。"""
+        waiting = self.store.list_waiting()
+        if not chat_session_key:
+            return waiting
+        bound = [d for d in waiting if d.cc_session_key == chat_session_key]
+        return bound + self._eligible_unbound(waiting, msg_ts)
 
     def _bind_chat(self, decision: DecisionRecord, chat_session_key: str) -> None:
         """把未绑定决策绑定到实际回复的聊天，供后续通知/恢复使用。"""
@@ -254,19 +273,13 @@ class ReplyHandler:
             return self.store.get(dec_id)
         waiting = self.store.list_waiting()
         if chat_session_key:
-            bound = [d for d in waiting if d.cc_session_key == chat_session_key]
-            if len(bound) == 1:
-                return bound[0]
-            if len(bound) > 1:
-                return None  # 同会话多个待决：要求显式 DEC-ID
-            # 未绑定会话的待决决策（交互式 Session 创建）：按最近通知自动绑定
-            chosen = self._pick_unbound(
-                [d for d in waiting if not d.cc_session_key], msg_ts)
-            if chosen is not None:
-                self._bind_chat(chosen, chat_session_key)
-                return chosen
+            candidates = self._candidates(chat_session_key, msg_ts)
+            if len(candidates) == 1:
+                return candidates[0]
+            if len(candidates) > 1:
+                return None  # 同聊天多个候选：必须显式 DEC-ID
             if waiting:
-                return None  # 有其他待决决策但无法唯一定位
+                return None  # 有其他待决决策但不在本聊天上下文
             # 没有待决决策时，才用已决记录做「重复回复」提示
             decided = [d for d in self.store.list(limit=50)
                        if d.cc_session_key == chat_session_key and not d.is_waiting]
@@ -277,7 +290,7 @@ class ReplyHandler:
         if len(waiting) == 1:
             return waiting[0]
         if waiting:
-            return self._pick_unbound([d for d in waiting if not d.cc_session_key], msg_ts)
+            return self._pick_unbound(waiting, msg_ts)
         decided = self.store.list(limit=1)
         return decided[0] if decided else None
 
