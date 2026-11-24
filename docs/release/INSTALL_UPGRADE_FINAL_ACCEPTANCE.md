@@ -137,11 +137,12 @@ DEC DecisionStatus.RESUMED A A
 | 发行版 HITL | **110 passed** |
 | 安装/迁移专项 | **13 passed**（`test_install_flags.py` 9 + `test_install_default.py` 4） |
 
-## 8. Git 状态（提交前）
+## 8. Git 状态
 
-- 源码 `main`：`scripts/install_manager.py`、`scripts/_config.py`、`scripts/doctor.py`、`scripts/jenkins_run.py`、`agent-manager/jenkins_adapter.py`、`docs/release/*` 待提交；`config/projects/jeebootx.yaml` 他人修改未触碰。
-- 发行版 `master`：`scripts/install_manager.py`、`scripts/install.sh`、`scripts/_config.py`、`scripts/doctor.py`、`scripts/jenkins_run.py`、`agent-manager/jenkins_adapter.py`、`tests/test_install_default.py`、`tests/test_install_flags.py`、`docs/release/*` 待提交；`docs/README.md` 他人修改未提交。
+- 源码 `main`：代码提交 `8157a74`；工作区仅剩 `config/projects/jeebootx.yaml` 他人未提交修改（未触碰）。
+- 发行版 `master`：代码提交 `06bf7ad`；`origin/master` 为 `f77e5c3`，本地领先 2 个提交（代码 + 本文档）；工作区干净。
 - 未 push、未 Tag、未改 VERSION、未全局发布。
+- 本文件随后的文档提交仅补充 SHA/验收结论，不改运行时代码。
 
 ## 9. 剩余风险
 
