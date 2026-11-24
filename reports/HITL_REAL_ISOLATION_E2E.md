@@ -33,32 +33,32 @@ cc-connect 仍执行了模型 turn（22s，input 43275 / output 204）。
 
 因此 s2 测试判定 **FAIL（旧 Hook/竞态）**；修复后需再测。
 
-## 3. 新会话复测（修复后，待执行）
+## 3. 新会话复测（修复后）— PASS
 
-已创建单决策：
+- 14:42:42 `/new` 清理旧会话；
+- 14:43:02 用户发送裸 `A`；
+- Hook 日志：`invoke has_cc_key=true` → `route block=true outcome=accepted`
+  decision `DEC-HITL-ISOLATION-FINAL-20261124-14422901`；
+- 决策 `RESUMED`；
+- cc-connect 日志：`turn complete ... tools=0 input_tokens=0 output_tokens=0`
+  → **没有模型 turn**；
+- DingTalk 收到 HITL 回执（hook/Handler 输出）。
 
-```text
-DEC-HITL-ISOLATION-FINAL-20261124-14422901
-```
+结论：新会话 + 修复后的 Hook 实现通道隔离。
 
-测试步骤：
-
-1. 在钉钉发送 `/new`（新建 Agent 会话，加载修复后的 Hook）；
-2. 发送裸 `A`；
-3. 预期：决策 RESUMED，钉钉收到 HITL 回执，**无模型回复/无 thinking**；
-4. 发送普通聊天“你好”：应正常收到 Claude 回复（Hook 放行）。
-
-当前状态：决策 `WAITING_REPLY`，**NOT_TESTED**。
+普通聊天：14:46:48 一条无 `CC_SESSION_KEY` 的 Claude prompt 被 Hook 放行
+（`block=false`），说明无 HITL 上下文时不拦截；**钉钉侧普通聊天真实回复仍标记 NOT_TESTED**。
 
 ## 4. 其他真实验收
 
 | 项 | 结果 |
 |---|---|
 | 显式 DEC-ID A/B/C（历史） | PASS |
-| 单决策裸 A（旧会话，Hook 未加载） | 决策 PASS；隔离 FAIL |
-| 单决策裸 A（s2 新会话，旧 Hook/竞态） | 决策 PASS；隔离 FAIL（已加 already_handled 修复，待复测） |
+| 单决策裸 A（旧会话，Hook 未加载） | 决策 PASS；隔离 FAIL（运行生命周期） |
+| 单决策裸 A（s2 新会话，旧 Hook/竞态） | 决策 PASS；隔离 FAIL（已修复 already_handled） |
+| 单决策裸 A（修复后新会话） | **PASS**：input/output tokens=0，无模型 turn |
 | 多决策裸 B 歧义 | NOT_TESTED（真实） |
-| 普通聊天放行 | 待新会话验证 |
+| 普通聊天放行 | 自动化 PASS；钉钉侧 NOT_TESTED |
 | 重复回复 | NOT_TESTED（本轮真实） |
 | `cc_connect_resume` | NOT_TESTED |
 
@@ -66,5 +66,6 @@ DEC-HITL-ISOLATION-FINAL-20261124-14422901
 
 - 安装/注册：PASS；
 - Hook 机制：真实 Claude 进程 PASS；
-- 真实 cc-connect 新会话：**NOT_TESTED**；
-- 旧会话不隔离是运行生命周期事实，需 `/new` 或新进程。
+- 真实 cc-connect 新会话：**PASS**（0 模型 tokens）；
+- 旧会话不隔离是运行生命周期事实，需 `/new` 或新进程；
+- 钉钉普通聊天真实回复、多决策裸 B 歧义、重复回复、`cc_connect_resume` 仍 NOT_TESTED。

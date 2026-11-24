@@ -30,24 +30,28 @@
 - 输出 `UserPromptSubmit operation blocked by hook`，无模型回复；
 - 决策 `DEC-HITL-HOOK-TEST-...` 状态 `RESUMED`，回复 A。
 
-## 3. 真实 cc-connect 通道隔离
+## 3. 真实 cc-connect 通道隔离 — PASS（新会话）
 
-**NOT_TESTED**：
-
-- hook 未安装到用户级 Claude settings（按边界不擅自修改用户配置）；
-- 因此没有“真实钉钉消息 → cc-connect → Claude hook 阻止 Agent”的端到端证据。
-- 机制已在真实 Claude 进程中验证；激活步骤见 RCA。
+- 用户级 `~/.claude/settings.json` 已注册 Hook（`state=ok`）；
+- 旧会话（Hook 安装前启动）不会热加载，需 `/new`；
+- 2026-11-24 14:43 新会话测试：
+  - `/new` 后发送裸 `A`；
+  - Hook 日志 `block=true outcome=accepted`；
+  - cc-connect `turn complete input_tokens=0 output_tokens=0` → **无模型 turn**；
+  - 决策 `DEC-HITL-ISOLATION-FINAL-...` RESUMED。
+- 普通聊天：Hook 对无 `CC_SESSION_KEY`/非 HITL prompt 放行（14:46 日志 `block=false`）；**钉钉侧普通聊天回复仍 NOT_TESTED**。
 
 ## 4. 真实钉钉决策结果（前序）
 
 | 测试 | 结果 |
 |---|---|
 | 显式 DEC-ID A/B/C | **PASS**：A/B/C 三条均一次接受 |
-| 单决策裸回复 | **PASS（此前 live_continue 测试）** |
+| 单决策裸回复 | **PASS**（新会话 Hook，0 模型 tokens） |
 | 已决后裸 B | 正确返回“当前没有匹配”，未串线 |
 | 多待决同时存在 + 裸 B 歧义 | **NOT_TESTED** |
 | C + 自定义意见 / 自然语言 | **NOT_TESTED** |
 | 本轮重复回复 | **NOT_TESTED** |
+| 普通聊天钉钉回复 | **NOT_TESTED**（Hook 放行逻辑已自动化/日志验证） |
 
 ## 5. 消息风暴
 
@@ -57,6 +61,8 @@
 
 ## 6. 结论
 
-- 消息分流机制：**实现并真实 Claude hook 验证**；
-- cc-connect 端到端激活：**NOT_TESTED**；
-- 最终 P0 通道隔离：**CONDITIONAL**（未激活）。
+- 消息分流：**PASS（真实 cc-connect 新会话，0 模型 tokens）**；
+- 安装/注册：PASS（Windows 隔离用户；macOS NOT_TESTED）；
+- 旧会话需 `/new` 才加载 Hook；
+- 普通聊天钉钉真实回复、多待决歧义、自定义意见、重复回复仍 NOT_TESTED；
+- 最终结论：**CONDITIONAL PASS**（核心隔离已通过，剩余场景待测）。

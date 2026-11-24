@@ -7,9 +7,8 @@
 - 单决策裸 A/B/C：代码与真实回复均通过（生产决策创建时自动绑定 Chat）。
 - 多决策：显式 DEC-ID 一次接受；裸选项歧义自动化通过，真实歧义提示未测。
 - 幂等/一次恢复：唯一约束 + 原子状态，测试通过。
-- **通道隔离**：已实现 Claude Code `UserPromptSubmit` 路由，并已合并到用户级
-  `~/.claude/settings.json`；真实 Claude hook 验证可阻止模型 turn。
-  但已存在的 cc-connect Agent 进程在安装前启动、不会热加载 Hook；需 `/new` 后复测。
+- **通道隔离**：Hook 已安装到用户级 settings；真实 cc-connect 新会话测试通过
+  （`input_tokens=0 output_tokens=0`，无模型 turn）；旧会话不热加载，需 `/new`。
 
 ## 2. P0 逐项
 
@@ -17,7 +16,7 @@
 |---|---|---|
 | 单决策只需 A/B/C | **PASS** | 绑定到当前 Chat 的唯一待决即可裸回复；真实 live A 通过 |
 | 多决策才要求 DEC-ID | **PASS（逻辑）** | 候选 >1 返回候选列表；真实裸 B 歧义未测 |
-| HITL 回复不再触发普通 Agent | **CONDITIONAL** | Hook 已安装并验证；现有 cc-connect 会话是安装前启动的旧进程，需 `/new` 新会话复测 |
+| HITL 回复不再触发普通 Agent | **PASS（新会话）** | 真实 cc-connect 新会话 `input/output tokens=0`；旧会话需 `/new` |
 | 一条决策只接受一次 | **PASS** | `(decision_id,msg_id)` 唯一 + 状态守卫；重复测试通过 |
 | 只恢复一次 | **PASS** | 状态机 RESUMING/RESUMED 守卫；测试通过 |
 
@@ -51,8 +50,7 @@
 
 ## 6. 未完成 / 风险
 
-1. **真实 cc-connect 新会话隔离复测**：已存在的 Agent 进程在 Hook 安装前启动，不会热加载；
-   14:25 的单决策测试仍跑了模型 turn。需要 `/new` 新建会话后复测。
+1. 真实钉钉**普通聊天**在 Hook 激活下的回复（当前自动化放行通过，钉钉侧 NOT_TESTED）。
 2. 真实多待决裸 B 歧义、C 自定义意见、自然语言、重复回复。
 3. `cc_connect_resume`。
 4. 多用户/群聊身份隔离。
