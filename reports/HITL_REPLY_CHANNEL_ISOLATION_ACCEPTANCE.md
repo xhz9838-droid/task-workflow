@@ -4,11 +4,11 @@
 
 | 范围 | 结果 |
 |---|---|
-| 源码全量 | **230 passed** |
-| 发行版全量 | **301 passed** |
-| 发行版 HITL | **109 passed** |
+| 源码全量 | **231 passed** |
+| 发行版全量 | **305 passed** |
+| 发行版 HITL | **110 passed** |
 
-新增 `test_prompt_router.py`（8 项）：
+新增 `test_prompt_router.py`（9 项）：
 
 - 无待决 → 普通聊天放行；
 - 单待决 + 裸 A → 阻止 Agent 并接受；
@@ -17,7 +17,8 @@
 - 显式 DEC-ID + C 自定义意见 → 阻止并接受；
 - 其他 Chat 裸选项 → 不放行、不认领；
 - 其他 Chat 显式 ID → 阻止并拒绝；
-- 非法选项 → 阻止并提示，不启动 Agent。
+- 非法选项 → 阻止并提示，不启动 Agent；
+- daemon 已先接受同一消息 → Hook 仍阻止 Agent（`already_handled`）。
 
 ## 2. 真实 Claude Code hook 验证
 

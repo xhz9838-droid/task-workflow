@@ -31,6 +31,8 @@ TS="$(date +%Y%m%d%H%M%S)"
 MODE="install"
 LINK=0
 WITH_MCP=0
+SETTINGS_FILE="$USER_CLAUDE/settings.json"
+HOOK_HELPER="$WORKFLOW_HOME/scripts/hitl_hook.py"
 for a in "$@"; do
   case "$a" in
     --uninstall) MODE="uninstall" ;;
@@ -38,6 +40,33 @@ for a in "$@"; do
     --with-mcp) WITH_MCP=1 ;;
   esac
 done
+
+native_root() {
+  (cd "$WORKFLOW_HOME" && pwd -W 2>/dev/null) || echo "$WORKFLOW_HOME"
+}
+
+install_hook() {
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+  local root; root="$(native_root)"
+  local cmd="$PYTHON_BIN -I \"$root/agent-manager/human_decision/prompt_router.py\""
+  if [[ ! -f "$HOOK_HELPER" ]]; then
+    echo "  ⚠ 缺少 Hook 安装器：$HOOK_HELPER（跳过 Hook）"
+    return 0
+  fi
+  if ! "$PYTHON_BIN" -I "$HOOK_HELPER" install --settings "$SETTINGS_FILE" \
+       --command "$cmd" --root "$root" >/dev/null 2>&1; then
+    echo "  ✗ HITL UserPromptSubmit Hook 安装失败" >&2
+    return 1
+  fi
+  echo "  ✓ HITL UserPromptSubmit Hook 已注册（$SETTINGS_FILE）"
+}
+
+uninstall_hook() {
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+  if [[ ! -f "$HOOK_HELPER" ]]; then return 0; fi
+  "$PYTHON_BIN" -I "$HOOK_HELPER" uninstall --settings "$SETTINGS_FILE" >/dev/null 2>&1 || true
+  echo "  ✓ 已移除本工作流的 HITL Hook（其他 Hooks 保留）"
+}
 
 # 本工作流安装的 Skill（zentao-dev-workflow 主体 + 项目注册引导）
 EXTRA_SKILLS=(workflow-register-project)
@@ -185,4 +214,4 @@ do_uninstall() {
   echo "卸载完成（用户其他 Skill/Agent 未动；config/execution/.env 保留）。"
 }
 
-if [[ "$MODE" == "uninstall" ]]; then do_uninstall; else do_install; write_install_record; fi
+if [[ "$MODE" == "uninstall" ]]; then uninstall_hook; do_uninstall; else do_install; write_install_record; install_hook; fi

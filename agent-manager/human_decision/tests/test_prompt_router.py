@@ -94,6 +94,17 @@ def test_other_chat_explicit_id_blocks_and_rejects(manager, store):
     assert store.get(rec.decision_id).status == DecisionStatus.WAITING_REPLY
 
 
+def test_recently_handled_message_still_blocks_agent(manager, store):
+    """daemon 先消费同一消息后，Hook 仍阻止 Agent（避免双通道）。"""
+    rec = _bind(store, _mk(manager))
+    r = manager.apply_reply(raw_text="A", source="watch", user_id=UID,
+                            chat_session_key=KEY, msg_id="m-daemon")
+    assert r["outcome"] == "accepted"
+    block, msg = route_prompt("A", KEY, UID, manager=manager, msg_id="m-hook")
+    assert block is True
+    assert "已处理" in msg
+
+
 def test_invalid_choice_blocks_agent(manager, store):
     rec = _bind(store, _mk(manager))
     block, msg = route_prompt("X", KEY, UID, manager=manager, msg_id="m7")
