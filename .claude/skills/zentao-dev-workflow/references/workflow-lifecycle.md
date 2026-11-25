@@ -108,6 +108,28 @@
 - 跨端契约一致性核对
 - 联调结论必须基于**实际运行证据**
 
+## 工作日志 / 工时（阶段 11）
+
+**工具**：`scripts/worklog.py`（计算） + `scripts/zt.py worklog`（写入）
+
+**触发**（按实际交付里程碑，不按时间/Agent 数/文件数）：
+- 开发 + 测试完成一个完整模块或阶段；
+- QA + 集成审查完成；
+- 最终满足完成条件、`finish` 之前（必须 100%）。
+- 小任务只有一个交付阶段 → 只在最终 `finish` 前记一次。
+
+```bash
+python -I "{WF}/scripts/zt.py" worklog --task <id> --stage dev   --progress 50 --work "完成设备围栏页面；实现启用/停用；前端构建通过；修复默认值问题"
+```
+
+**规则**：
+- 总工时：计划周期工作日（周一至周五）× 8，其次 `estimate`；都可缺 → `NO_BASELINE`，不编造；
+  需要时由人提供 `--total-hours`。
+- `consumed` 是本次增量 = 总工时×进度 − 任务当前 consumed；`left` = 总工时 − 总工时×进度。
+- 同一进度/Agent 重试 → 自动跳过，不重复累计。
+- 工作日志**不改变任务状态**；完成仍走 Verifier 门禁 + `finish`。
+- 失败/结果不明 → 先查任务是否已写入再重试；**最终工作日志未成功不得 finish**。
+
 ## 进度回写（阶段 11）
 
 **适配器**：`scripts/zt.py`（或对应适配器）
@@ -128,5 +150,5 @@
 - `task_finish`（doing→done）：Verifier 质量门禁通过后**允许自动执行**，**必须带完成内容 + git commit id**（写入 finished 动作备注，不写任务 desc），写入后**必须读回禅道状态与完成备注确认结果**
 - `task_close`（→closed）：**始终禁止自动执行**，须本人手动操作
 
-工时/日期不推算：`consumed`/`left`/`finishedDate` 必须由调用方提供。
+工作日志的 `consumed`/`left` 由 `scripts/worklog.py` 依据进度与基线计算；`finish` 的 `consumed`/`left`/`finishedDate` 仍必须由调用方提供。
 工作流标记 `COMPLETED` ≠ 业务任务关闭。

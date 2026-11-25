@@ -120,6 +120,9 @@ python -I "{WF}/scripts/dispatch.py" --project {project_key} \
 9. CI 构建（jenkins 适配器，仅白名单 Job）
 10. 失败修复（L1/L2 自动，L3 人工）；dispatch.py reconcile 对账僵尸/超时
 11. QA + 集成审查（dispatch.py record-result 写执行层结果，主控验收层核验）
+11.5 工作日志/工时（每个交付里程碑 + finish 前）：按实际交付判断进度，调用
+   `python -I "{WF}/scripts/zt.py" worklog --task <id> --stage <stage> --progress <0-100> --work "<本阶段实际完成>"`；
+   工具按计划工作日×8 或 estimate 计算总工时，只写增量 consumed/left；写日志不等于完成任务，finish 仍需门禁通过。
 12. 进度回写（task_source 适配器，追加不覆盖；`pending_writes` 非空时先 flush）
 13. 最终报告 → Verifier 门禁通过 → **`dispatch.py gate --finalize` 返回 ok** → 自动 task_finish（读回确认；**须带完成内容 + git commit id**，写入 finished 动作备注，不写任务 desc）→ 关闭条件满足则自动 task_close（读回确认）
 ```
@@ -127,6 +130,8 @@ python -I "{WF}/scripts/dispatch.py" --project {project_key} \
 > **状态源**：DAG 节点执行状态唯一真相源是 agent-manager SQLite（`node_dispatches`）。`run-state.json` 是 `dispatch.py export-state` 的只读快照。主控/Skill/Subagent 禁止直接改 JSON。
 >
 > **阶段进度自动回写**：每个阶段（需求分析、技术设计、人工设计确认、开发+测试、QA+集成审查）完成后自动调用 Zentao Reporter 追加进度（`report_progress`），不等待用户确认。回写失败入 `pending_writes` 队列，后续重试。
+>
+> **工作日志自动回写**：开发+测试、QA+集成审查等有实际交付的里程碑，以及最终 `finish` 前，调用 `zt.py worklog` 记录真实完成内容和增量工时；同一进度重复调用会跳过（Agent 重试安全）。**工作日志失败不得执行 finish**；无计划/estimate 基线时不得编造工时，先补齐字段或人工处理。
 
 ## L3 决策强制路由
 
@@ -142,7 +147,7 @@ python -I "{WF}/scripts/dispatch.py" --project {project_key} \
 - **规则 1/2/3**：子 Agent 完成后必须继续推进 DAG，不得提前结束
 - **规则 4**：完成状态须证据核验，不采信 Agent 自述
 - **规则 6**：中断恢复从最近可信检查点继续，不重复已完成节点
-- **规则 8**：结束前必须运行 `python -I "{WF}/scripts/dispatch.py" --project <k> --task-id <id> gate --finalize`，返回 ok 才允许 COMPLETED；`task_finish` 经 Verifier 门禁后自动执行（须读回确认，**且须带完成内容 + git commit id**，写入 finished 动作备注、不写任务 desc）；`task_close` 在关闭条件满足后自动执行（须读回确认），条件不满足则暂缓并记录原因。
+- **规则 8**：结束前必须运行 `python -I "{WF}/scripts/dispatch.py" --project <k> --task-id <id> gate --finalize`，返回 ok 才允许 COMPLETED；`task_finish` 经 Verifier 门禁后自动执行（须读回确认，**且须带完成内容 + git commit id**，写入 finished 动作备注、不写任务 desc）；**finish 前必须已成功写入最终 100% 工作日志**（`zt.py worklog`，失败则重试/暂缓，不得先 finish）；`task_close` 在关闭条件满足后自动执行（须读回确认），条件不满足则暂缓并记录原因。
 
 ## 何时查阅 references
 

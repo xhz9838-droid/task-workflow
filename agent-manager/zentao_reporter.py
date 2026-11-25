@@ -108,6 +108,57 @@ class ZenTaoReporter:
             raise ZenTaoWriteError(f"进度回写读回未确认: {out[-200:]}")
         return result
 
+    # ------------------------------------------------------- 工作日志/工时
+    def report_worklog(
+        self,
+        *,
+        task_id: str,
+        project_key: str,
+        stage: str,
+        progress: float,
+        work: str,
+        date: str = "",
+        total_hours: float | None = None,
+    ) -> dict:
+        """记录阶段工作日志（增量 consumed），不改变任务完成状态。
+
+        工时由 scripts/worklog.py 统一计算：计划工作日×8 或 estimate；
+        无基线时拒绝（不编造）。写日志与 finish 相互独立。
+        """
+        payload = {
+            "stage": stage, "progress": progress, "work": work,
+            "date": date, "total_hours": total_hours, "at": _now(),
+        }
+        if self.dry_run:
+            self._log(f"[dry-run] 工作日志 task={task_id} stage={stage} progress={progress}")
+            return {"ok": True, "dry_run": True, "payload": payload}
+
+        args = [
+            "worklog", "--task", str(task_id), "--stage", stage,
+            "--progress", str(progress), "--work", work,
+        ]
+        if date:
+            args += ["--date", date]
+        if total_hours is not None:
+            args += ["--total-hours", str(total_hours)]
+        try:
+            out = self._run_zt(args, timeout=120)
+        except Exception as e:
+            self._enqueue(task_id, project_key, "worklog", payload, str(e))
+            raise ZenTaoWriteError(f"工作日志写入失败（已存待写队列）: {e}")
+
+        try:
+            result = json.loads((out or "").strip().splitlines()[-1])
+        except Exception:
+            self._enqueue(task_id, project_key, "worklog", payload, "输出无法解析")
+            raise ZenTaoWriteError(f"工作日志结果无法解析: {out[-200:]}")
+        if not result.get("ok"):
+            self._enqueue(task_id, project_key, "worklog", payload,
+                          result.get("error", "unknown"))
+            raise ZenTaoWriteError(f"工作日志未成功: {result.get('error') or result}")
+        result["payload"] = payload
+        return result
+
     # ------------------------------------------------------- Agent 结果
     def report_agent_result(
         self,
@@ -409,6 +460,16 @@ class ZenTaoReporter:
                         deliverables_ok=bool(payload.get("deliverables_ok", True)),
                         records_ok=bool(payload.get("records_ok", True)),
                         exec_id=str(payload.get("exec_id") or ""),
+                    )
+                elif action == "worklog":
+                    self.report_worklog(
+                        task_id=w["task_id"],
+                        project_key=w.get("project_key", ""),
+                        stage=payload.get("stage", "retry"),
+                        progress=payload.get("progress"),
+                        work=payload.get("work", ""),
+                        date=payload.get("date", ""),
+                        total_hours=payload.get("total_hours"),
                     )
                 else:
                     self.report_progress(

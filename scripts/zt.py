@@ -11,6 +11,8 @@
            完成任务 doing→done（复用 ZenTaoClient.task_finish 动作端点 + 读回核验）。
            完成内容 + commit id 写入 finished 动作备注（不写 desc）。
            幂等：已 done 直接跳过；受配置 zentao.allow_finish 控制（默认 auto_after_gate）。
+  worklog  --task 3413 --progress 50 --stage dev --work <本阶段完成内容>
+           记录阶段工作日志/增量工时（不完成任务；总工时按计划工作日/estimate 计算）
   close    --task 3413 --comment <关闭备注>
            关闭任务 done→closed（关闭条件满足后自动执行 + 读回核验）。
            幂等：已 closed 直接跳过；受配置 zentao.allow_close 控制（默认 auto_after_gate）。
@@ -54,6 +56,7 @@ except ImportError as _e:
     )
     raise SystemExit(3)
 from audit import audit  # noqa: E402
+from worklog import WorklogError, build_entry  # noqa: E402
 
 FIELDS = ("id", "name", "status", "pri", "type", "project", "execution", "executionName",
           "story", "storyTitle", "module", "estimate", "consumed", "left", "estStarted",
@@ -261,6 +264,96 @@ def cmd_close(args):
     return 0 if ok else 3
 
 
+def cmd_worklog(args):
+    """记录阶段工作日志/工时（v1 estimate，增量 consumed）。
+
+    自动工时由 scripts/worklog.py 计算；写日志与 finish 相互独立。
+    幂等：当前 consumed 已达到目标进度对应工时时跳过，不重复累计。
+    """
+    client = _client()
+    task = _load_own_task(client, args.task)
+    status = str(task.get("status") or "").lower()
+    if status in ("done", "closed"):
+        print(json.dumps({"ok": False, "code": "TASK_ALREADY_DONE",
+                          "error": "任务状态 %s，不能再新增工作日志" % status},
+                         ensure_ascii=False))
+        return 3
+    if status != "doing":
+        print(json.dumps({"ok": False, "code": "TASK_NOT_DOING",
+                          "error": "任务状态 %r，工作日志仅用于执行中的任务" % status},
+                         ensure_ascii=False))
+        return 3
+    try:
+        entry = build_entry(task, progress=args.progress, work=args.work,
+                            stage=args.stage, total=args.total_hours,
+                            date=args.date, task_id=args.task)
+    except WorklogError as e:
+        audit(args.task, "zentao.worklog", {"result": "rejected", "code": e.code})
+        print(json.dumps({"ok": False, "code": e.code, "error": str(e)},
+                         ensure_ascii=False))
+        return 3
+    if entry.get("skipped"):
+        print(json.dumps(entry, ensure_ascii=False))
+        return 0
+    if args.dry_run:
+        print(json.dumps(dict(entry, dry_run=True), ensure_ascii=False))
+        return 0
+    if not os.path.isfile(MANAGE):
+        print(json.dumps({"ok": False, "code": "MANAGE_SKILL_MISSING",
+                          "error": "缺少 zentao-tasks manage_tasks.py：%s" % MANAGE},
+                         ensure_ascii=False))
+        return 3
+    row = {"date": entry["date"], "work": entry["work"],
+           "consumed": entry["consumed"], "left": entry["left"]}
+    cmd = [sys.executable, "-I", MANAGE, "--config", CONFIG, "workhour",
+           "--task", str(args.task), "--entries",
+           json.dumps([row], ensure_ascii=False), "--yes"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=120,
+                              env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+    except subprocess.TimeoutExpired:
+        audit(args.task, "zentao.worklog", {"result": "timeout", "stage": args.stage})
+        print(json.dumps({"ok": False, "code": "TIMEOUT",
+                          "error": "工作日志写入超时，请先核对禅道是否已写入再重试"},
+                         ensure_ascii=False))
+        return 4
+    out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+    ok = proc.returncode == 0 and "工时记录成功" in out
+    if not ok:
+        audit(args.task, "zentao.worklog", {"result": "failed", "stage": args.stage,
+                                            "rc": proc.returncode})
+        print(json.dumps({"ok": False, "code": "WRITE_FAILED",
+                          "error": "工作日志写入失败（rc=%s）" % proc.returncode,
+                          "output_tail": out[-500:]}, ensure_ascii=False))
+        return 3
+    try:
+        after = client.task_detail(args.task)
+    except Exception as e:
+        print(json.dumps({"ok": False, "code": "READBACK_FAILED",
+                          "error": "已写入但读回失败：%s" % e}, ensure_ascii=False))
+        return 4
+    changed = (str(after.get("consumed")) != str(task.get("consumed"))
+               or str(after.get("left")) != str(task.get("left")))
+    if not changed:
+        audit(args.task, "zentao.worklog", {"result": "readback_unchanged",
+                                            "stage": args.stage})
+        print(json.dumps({"ok": False, "code": "READBACK_UNCHANGED",
+                          "error": "端点成功但 consumed/left 未变化，请人工核对禅道"},
+                         ensure_ascii=False))
+        return 4
+    result = dict(entry, ok=True, consumed_before=entry["consumed_before"],
+                  consumed_after=after.get("consumed"), left_after=after.get("left"),
+                  output_tail=out[-300:])
+    audit(args.task, "zentao.worklog", {
+        "result": "success", "stage": args.stage,
+        "consumed": entry["consumed"], "left": entry["left"],
+        "after_consumed": after.get("consumed"), "after_left": after.get("left"),
+    })
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def cmd_projects(args):
     """只读：当前用户可访问的禅道项目列表（项目注册第 1 步）。"""
     client = _client()
@@ -329,6 +422,18 @@ def main():
     c.add_argument("--comment", required=True, help="关闭备注（禅道必填，不带则静默不生效）")
     c.add_argument("--exec-id", default="", help="执行 ID（审计记录用）")
     c.set_defaults(func=cmd_close)
+    w = sub.add_parser("worklog", help="记录阶段工作日志/工时（自动增量，不完成任务）")
+    w.add_argument("--task", required=True)
+    w.add_argument("--progress", type=float, required=True,
+                   help="当前整体完成进度 0–100（按实际交付判断，不按时间）")
+    w.add_argument("--work", required=True, help="本阶段实际完成内容（来自真实执行结果）")
+    w.add_argument("--stage", default="milestone", help="阶段标识，如 backend/test/qa")
+    w.add_argument("--date", default="", help="工作日期 YYYY-MM-DD（默认今天）")
+    w.add_argument("--total-hours", type=float, default=None,
+                   help="显式总工时；缺省按计划工作日×8 或 estimate")
+    w.add_argument("--dry-run", action="store_true")
+    w.set_defaults(func=cmd_worklog)
+
     j = sub.add_parser("projects", help="只读：当前用户可访问的禅道项目列表")
     j.set_defaults(func=cmd_projects)
     k = sub.add_parser("project", help="只读：任务→项目归属信息")
