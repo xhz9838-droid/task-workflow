@@ -48,6 +48,9 @@ def test_same_stage_or_agent_retry_is_idempotent():
     task = _task(consumed=4, estimate=8)
     e = worklog.build_entry(task, progress=50, work="重复")
     assert e["skipped"] is True and e["consumed"] == 0.0
+    # 不同 Agent 落在同一进度也不重复累计
+    e2 = worklog.build_entry(task, progress=50, stage="qa", work="QA 重复")
+    assert e2["skipped"] is True and e2["consumed"] == 0.0
 
 
 def test_estimate_fallback_and_plan_priority():
